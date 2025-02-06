@@ -1,0 +1,320 @@
+/* Main container styles */
+.clipper-container {
+  background-color: #0f0f25;
+  color: #ffffff;
+  min-height: 100vh;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+/* Input and button styling */
+.url-input-container {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 20px;
+}
+.feature-btn {
+    padding: 10px 15px;
+    margin: 5px;
+    border: 2px solid #007bff;
+    background-color: white;
+    color: #007bff;
+    border-radius: 5px;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.feature-btn.active {
+    background-color: #007bff;
+    color: white;
+}
+
+.feature-btn:hover {
+    background-color: #0056b3;
+    color: white;
+}
+
+.url-input {
+  padding: 10px;
+  width: 300px;
+  border: none;
+  border-radius: 5px;
+  color: #ffffff;
+  background-color: #333;
+  font-size: 16px;
+}
+
+.fetch-btn {
+  background-color: #444;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.fetch-btn:hover {
+  background-color: #8f3af5;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.fetch-btn:active {
+  background-color: #333;
+  transform: translateY(0);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+/* Error message styling */
+.error-message {
+  color: red;
+  font-size: 14px;
+}
+
+/* Video preview styling */
+.video-preview-container {
+  text-align: center;
+  margin: 20px;
+}
+
+.video-thumbnail {
+  width: 100%;
+  max-width: 400px;
+  border-radius: 10px;
+  border: 2px solid #8f3af5;
+}
+
+/* Optimization Type Buttons */
+.optimization-type {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  margin-top: 20px;
+}
+
+.optimization-type button {
+  background-color: #444;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s ease;
+}
+
+/* Active State for Selected Button */
+.optimization-type button.active {
+  background-color: #8f3af5; /* Highlighted background */
+  color: #ffffff; /* White text */
+  border: 2px solid #8f3af5; /* Border color */
+  font-weight: bold; /* Bold text */
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.3); /* Shadow effect */
+  transform: scale(1.05); /* Slight zoom effect */
+}
+
+/* Hover Effect */
+.optimization-type button:hover {
+  background-color: #8f3af5;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.optimization-type button:active {
+  background-color: #333;
+  transform: translateY(0);
+}
+
+/* Settings Container */
+.settings-container {
+  margin-top: 20px;
+  text-align: left;
+  width: 80%;
+  max-width: 600px;
+}
+
+.features button {
+  margin: 5px;
+}
+
+.clip-count button {
+  margin: 5px;
+}
+
+/* Generate Button */
+.generate-btn {
+  margin-top: 20px;
+  text-align: center;
+}
+
+.generate-btn button {
+  background-color: #8f3af5;
+  color: white;
+  border: none;
+  padding: 10px 20px;
+  border-radius: 8px;
+  cursor: pointer;
+  font-size: 16px;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 8px rgba(0, 0, 0, 0.2);
+}
+
+.generate-btn button:hover {
+  background-color: #a35ef7;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 12px rgba(0, 0, 0, 0.3);
+}
+
+.generate-btn button:active {
+  background-color: #7a1dd1;
+  transform: translateY(0);
+}
+/* Add these styles to your clipper.css file */
+
+/* Optimization type buttons styling */
+.optimization-type {
+    margin: 20px 0;
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    align-items: center;
+    flex-wrap: wrap;
+}
+
+.optimization-type button {
+    padding: 12px 24px;
+    border: 2px solid #8b5cf6;
+    background-color: transparent;
+    color: #8b5cf6;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.optimization-type button:hover {
+    background-color: #8b5cf6;
+    color: white;
+}
+
+.optimization-type button.active {
+    background-color: #8b5cf6;
+    color: white;
+}
+
+/* Features buttons styling */
+.features {
+    display: flex;
+    gap: 15px;
+    justify-content: center;
+    margin: 20px 0;
+    flex-wrap: wrap;
+}
+
+.feature-btn {
+    padding: 10px 20px;
+    border: 2px solid #8b5cf6;
+    background-color: transparent;
+    color: #8b5cf6;
+    border-radius: 6px;
+    font-size: 14px;
+    font-weight: 500;
+    cursor: pointer;
+    transition: all 0.3s ease;
+}
+
+.feature-btn:hover {
+    background-color: #8b5cf6;
+    color: white;
+}
+
+.feature-btn.active {
+    background-color: #8b5cf6;
+    color: white;
+}
+
+/* Short form options styling */
+.short-form-options {
+    display: flex;
+    gap: 30px;
+    justify-content: center;
+    align-items: center;
+    margin: 25px 0;
+    flex-wrap: wrap;
+}
+
+.dropdown-container, .clip-count-container {
+    display: flex;
+    flex-direction: column;
+    gap: 8px;
+    min-width: 200px;
+    background-color: #f8f7ff;
+    padding: 15px;
+    border-radius: 10px;
+    box-shadow: 0 2px 4px rgba(139, 92, 246, 0.1);
+}
+
+.dropdown-container label, .clip-count-container label {
+    color: #4c4b4b;
+    font-weight: 600;
+    font-size: 14px;
+}
+
+.dropdown-container select, .clip-count-container input {
+    padding: 10px;
+    border: 2px solid #8b5cf6;
+    border-radius: 6px;
+    font-size: 14px;
+    background-color: white;
+    color: #4c4b4b;
+    outline: none;
+    transition: all 0.3s ease;
+}
+
+.dropdown-container select:focus, .clip-count-container input:focus {
+    border-color: #7c3aed;
+    box-shadow: 0 0 0 2px rgba(139, 92, 246, 0.2);
+}
+
+/* Generate button styling */
+.generate-btn button {
+    background-color: #8b5cf6;
+    color: white;
+    padding: 12px 30px;
+    border: none;
+    border-radius: 8px;
+    font-size: 16px;
+    font-weight: 600;
+    cursor: pointer;
+    transition: all 0.3s ease;
+    margin-top: 20px;
+}
+
+.generate-btn button:hover:not(:disabled) {
+    background-color: #7c3aed;
+    transform: translateY(-1px);
+}
+
+.generate-btn button:disabled {
+    background-color: #c4b5fd;
+    cursor: not-allowed;
+}
+
+/* Error message styling */
+.error-message {
+    background-color: #fff1f2;
+    border: 1px solid #fecdd3;
+    color: #be123c;
+    padding: 12px 20px;
+    border-radius: 8px;
+    margin: 15px 0;
+    text-align: center;
+    font-size: 14px;
+}

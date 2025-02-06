@@ -1,0 +1,102 @@
+/* src/components/HomePage.css */
+
+body {
+  font-family: 'Poppins', sans-serif;
+  margin: 0;
+  padding: 0;
+}
+
+.highlight {
+  font-weight: bold; /* Ensure "one" is bold */
+}
+
+.regular-text {
+  font-weight: normal; /* Set "click" to normal weight */
+}
+
+
+.home-container {
+    color: #fff;
+    background-color: #0f0f25;
+    min-height: 100vh;
+  }
+  
+  .navbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 20px 50px;
+    background-color: #1a1a3a;
+  }
+  
+  .logo {
+    font-size: 1.5em;
+  }
+  
+  .highlight {
+    color: #8f3af5;
+  }
+  
+  .nav-links a {
+    margin: 0 15px;
+    color: #fff;
+    text-decoration: none;
+  }
+  
+  .sign-in-btn,
+  .sign-up-btn {
+    margin-left: 15px;
+    padding: 10px 20px;
+    background-color: #8f3af5;
+    color: #fff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  
+  .sign-in-btn {
+    background-color: transparent;
+    border: 1px solid #8f3af5;
+  }
+  
+  .main-content {
+    font-size: x-large;
+    text-align: center;
+    padding: 50px;
+  }
+  
+  .video-preview {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 20px;
+    margin-top: 30px;
+  }
+  
+  .features {
+    color: #4caf50;
+  }
+  
+  .input-section {
+    margin-top: 30px;
+    display: flex;
+    justify-content: center;
+    gap: 10px;
+  }
+  
+  input[type="url"] {
+    padding: 10px 15px;
+    border-radius: 5px;
+    border: 1px solid #ddd;
+    width: 300px;
+  }
+  
+  .get-clips-btn {
+    padding: 5px 15PX;
+    background-color: #8f3af5;
+    color: #ffffff;
+    border: none;
+    border-radius: 5px;
+    cursor: pointer;
+  }
+  
