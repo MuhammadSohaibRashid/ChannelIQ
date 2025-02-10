@@ -6,7 +6,7 @@ from webbrowser import open as open_browser
 from subprocess import run as subprocess_run
 from shutil import rmtree as remove_directory
 from timeit import default_timer as timer
-
+import os
 from typing import Callable
 from threading import Thread
 from itertools import repeat
@@ -146,7 +146,7 @@ video_extension_list = [".mp4 (x264)", ".mp4 (x265)", ".avi"]
 OUTPUT_PATH_CODED = "Same path as input files"
 DOCUMENT_PATH = os_path_join(os_path_expanduser('~'), 'Documents')
 USER_PREFERENCE_PATH = find_by_relative_path(f"{DOCUMENT_PATH}{os_separator}{app_name}_UserPreference.json")
-FFMPEG_EXE_PATH = find_by_relative_path(f"Assets{os_separator}ffmpeg.exe")
+FFMPEG_EXE_PATH = os.path.join(os.getcwd(), "ffmpeg", "ffmpeg.exe")
 EXIFTOOL_EXE_PATH = find_by_relative_path(f"Assets{os_separator}exiftool.exe")
 
 ECTRACTION_FRAMES_FOR_CPU = 25

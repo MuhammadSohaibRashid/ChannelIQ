@@ -27,24 +27,15 @@ function Seo_shortform({ videoThumbnail }) {
   };
 
   const handleCompare = () => {
-    const localPath = selectedClip.replace(
-      'http://127.0.0.1:8000/media/processed/',
-      'C:\\Users\\aqiba\\Desktop\\test3-main\\test3-main\\backend\\media\\processed\\'
-    );
+    const originalFilename = selectedClip.split('/').pop();
 
-    let processedResult = {};
-    if (selectedFeatures.includes('Noise Reduction') && results.audio_processing) {
-      processedResult = { audio_processing: results.audio_processing };
-    } else if (selectedFeatures.includes('Video Quality') && results.video_upscaling) {
-      processedResult = { video_upscaling: results.video_upscaling };
-    }
-
+    
     navigate('/comparison', {
       state: {
-        results: processedResult,
+        results: results,
         selectedFeatures,
         videoURL: null,
-        localVideoPath: localPath,
+        localVideoPath: `\\media\\videos\\${originalFilename}`,
         seoData: null
       }
     });

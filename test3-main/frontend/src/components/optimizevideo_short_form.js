@@ -40,24 +40,16 @@ const Optimizevideo_shortform = () => {
  const handleCompare = () => {
     const { results, selectedFeatures, selectedClip } = location.state;
 
-    // Convert the HTTP URL back to local file path format
-    const localPath = selectedClip.replace(
-      'http://127.0.0.1:8000/media/processed/',
-      'C:\\Users\\aqiba\\Desktop\\test3-main\\test3-main\\backend\\media\\processed\\'
-    );
-
-    // Filter out SEO data from results
+    // Extract filename from the URL path
+    const originalFilename = selectedClip.split('/').pop();
 
 
-    const clipData = Object.values(results)[0] || {};
-
-    // Navigate with unnested data
     navigate('/comparison', {
       state: {
-        results: clipData, // Send the unnested data directly
+        results: results,
         selectedFeatures,
         videoURL: null,
-        localVideoPath: localPath,
+        localVideoPath: `\\media\\videos\\${originalFilename}`,
         seoData: null
       }
     });
