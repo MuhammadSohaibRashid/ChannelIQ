@@ -11,6 +11,12 @@ const LoginPage = () => {
     navigate('/home');
   };
 
+  const handleGoogleLoginSuccess = (response) => {
+    console.log(response);
+    // Perform any additional login logic here
+    navigate('/home');
+  };
+
   return (
     <div className="login-page">
       <header className="header">
@@ -33,18 +39,18 @@ const LoginPage = () => {
           </h1>
           <p>Turn your long videos into <span className="highlight">VIRAL</span> short clips.</p>
           <ul>
-            <li>✔️ AI SEO</li>
-            <li>✔️ Auto Caption</li>
-            <li>✔️ Auto Clipping</li>
-            <li>✔️ Quality Enhancer</li>
-            <li>✔️ Sound Improvement</li>
+            <li>✔ AI SEO</li>
+            <li>✔ Auto Caption</li>
+            <li>✔ Auto Clipping</li>
+            <li>✔ Quality Enhancer</li>
+            <li>✔ Sound Improvement</li>
           </ul>
         </div>
 
         <div className="right-panel">
           <h2>Login to your account</h2>
           <GoogleLogin
-            onSuccess={response => console.log(response)}
+            onSuccess={handleGoogleLoginSuccess}
             onError={() => console.log("Login Failed")}
           />
           <div className="divider">or</div>

@@ -14,27 +14,16 @@ function ClipPreview() {
 
     useEffect(() => {
         console.log("Received clipPaths:", clipPaths);
-
+    
         if (!clipPaths || clipPaths.length === 0) {
             setError("No clips found to display.");
         } else {
-            const extractedPaths = clipPaths
-                .map((clipPath) => {
-                    // Convert Windows path to forward slashes
-                    const normalizedPath = clipPath.replace(/\\/g, '/');
-                    // Extract the portion after 'media/'
-                    const match = normalizedPath.match(/media\/processed\/(.+)/);
-                    return match ? `http://127.0.0.1:8000/media/processed/${match[1]}` : null;
-                })
-                .filter(Boolean);
-
+            const extractedPaths = clipPaths.map(clipPath => 
+                `http://127.0.0.1:8000/media/${clipPath}`
+            );
+    
             console.log("Extracted clipPaths:", extractedPaths);
-
-            if (extractedPaths.length === 0) {
-                setError("No valid video paths found.");
-            } else {
-                setProcessedClipPaths(extractedPaths);
-            }
+            setProcessedClipPaths(extractedPaths);
         }
     }, [clipPaths]);
 
@@ -152,7 +141,7 @@ function ClipPreview() {
 
                     <div className="features">
                         <h3>Select Features to Apply:</h3>
-                        {["Noise Reduction", "Video Quality", "SEO"].map((feature) => (
+                        {["Noise Reduction", "Video Quality", "SEO","Captions"].map((feature) => (
                             <button
                                 key={feature}
                                 className={`feature-btn ${

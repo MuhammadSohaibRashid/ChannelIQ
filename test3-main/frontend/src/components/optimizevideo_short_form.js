@@ -8,28 +8,41 @@ const Optimizevideo_shortform = () => {
   const [videoPath, setVideoPath] = useState("");
   const [message, setMessage] = useState("");
   const [enhancementType, setEnhancementType] = useState("");
-  let videoURL, results, localVideoPath, selectedFeatures;
+  const [isCaptionAdded, setIsCaptionAdded] = useState(false); // New state for captions
+
   useEffect(() => {
     if (location.state) {
       const { results = {}, selectedFeatures, selectedClip } = location.state;
       console.log("Received Results:", results);
+
+      // Extract paths for audio, video, and captions
       const audioEnhancedPath = results.audio_processing?.processed_file_path;
       const videoEnhancedPath = results.video_upscaling?.processed_file_path;
+      const captionedVideoPath = results.captions?.processed_file_path; // New: Captioned video path
 
       let selectedPath = "";
-      if (audioEnhancedPath) {
+      let enhancementType = "";
+
+      // Determine which path to use based on processing order
+      if (captionedVideoPath) {
+        selectedPath = captionedVideoPath;
+        enhancementType = "Captions Added";
+        setIsCaptionAdded(true); // Set captions state to true
+      } else if (audioEnhancedPath) {
         selectedPath = audioEnhancedPath;
-        setEnhancementType("Audio Enhanced");
+        enhancementType = "Audio Enhanced";
       } else if (videoEnhancedPath) {
         selectedPath = videoEnhancedPath;
-        setEnhancementType("Video Enhanced");
-      } 
+        enhancementType = "Video Enhanced";
+      }
 
+      // Set the video path and enhancement type
       if (selectedPath) {
         const filename = selectedPath.split('\\').pop();
         if (filename) {
           setVideoPath(`http://127.0.0.1:8000/media/processed/${filename}`);
           setMessage("Video processing completed successfully!");
+          setEnhancementType(enhancementType);
         }
       } else {
         setMessage("No processed video available.");
@@ -37,12 +50,11 @@ const Optimizevideo_shortform = () => {
     }
   }, [location.state]);
 
- const handleCompare = () => {
+  const handleCompare = () => {
     const { results, selectedFeatures, selectedClip } = location.state;
 
     // Extract filename from the URL path
     const originalFilename = selectedClip.split('/').pop();
-
 
     navigate('/comparison', {
       state: {
@@ -50,10 +62,11 @@ const Optimizevideo_shortform = () => {
         selectedFeatures,
         videoURL: null,
         localVideoPath: `\\media\\videos\\${originalFilename}`,
-        seoData: null
-      }
+        seoData: null,
+      },
     });
   };
+
   return (
     <div className="clipping-app">
       <header className="header">
@@ -66,10 +79,7 @@ const Optimizevideo_shortform = () => {
           <a href="#pricing">Pricing</a>
           <button className="sign-in">Sign in</button>
           <button className="sign-up">Sign up</button>
-          <button
-            className="home-button"
-            onClick={() => navigate('/clipper')}
-          >
+          <button className="home-button" onClick={() => navigate('/clipper')}>
             Home
           </button>
         </nav>
@@ -82,9 +92,10 @@ const Optimizevideo_shortform = () => {
         </header>
 
         <div className="enhancement-info">
-          <span className="enhancement-badge">
-            {enhancementType}
-          </span>
+          <span className="enhancement-badge">{enhancementType}</span>
+          {isCaptionAdded && ( // Display captions badge if captions were added
+            <span className="enhancement-badge captions-badge">Captions</span>
+          )}
         </div>
 
         <div className="video-output">

@@ -9,6 +9,7 @@ from .Components.Edit import extractAudio, crop_video
 from .Components.Transcription import transcribeAudio
 from .Components.LanguageTasks import GetHighlight
 from .Components.FaceCrop import process_video_clip, combine_videos
+from .Components.resize import resize_video
 from django.conf import settings
 
 # Suppress MoviePy logs
@@ -61,17 +62,9 @@ def process_video(url, clip_length, clip_count, media_root):
                         os.makedirs(Temp, exist_ok=True)
                         os.makedirs(processed, exist_ok=True)
                         cropped_output = os.path.join(Temp, f"cropped_clip_{idx + 1}.mp4")
-                        vertical_output = os.path.join(Temp, f"vertical_clip_{idx + 1}.mp4")
-                        combined_output = os.path.join(processed, f"combined_clip_{idx + 1}.mp4")
-
                         # Process video segments
                         crop_video(Vid, cropped_output, start, stop)
-                        
-                        yolo_path = os.path.join(settings.BASE_DIR, "models", "yolov8n.pt")
-                        fps = process_video_clip(cropped_output, vertical_output, yolo_model_path=yolo_path)
-                        
-                        combine_videos(cropped_output, vertical_output, combined_output, fps)
-
+                        combined_output=resize_video(cropped_output)
                         final_videos.append({
                             "clip_path": combined_output
                         })

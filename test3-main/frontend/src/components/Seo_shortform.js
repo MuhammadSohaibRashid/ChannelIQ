@@ -22,6 +22,10 @@ function Seo_shortform({ videoThumbnail }) {
       const fileName = results.video_upscaling.processed_file_path.split('\\').pop();
       return `http://127.0.0.1:8000/media/processed/${fileName}`;
     }
+    if (results?.captions.processed_file_path) {
+      const fileName = results.captions.processed_file_path.split('\\').pop();
+      return `http://127.0.0.1:8000/media/processed/${fileName}`;
+    }
 
     return selectedClip;
   };
@@ -93,7 +97,7 @@ function Seo_shortform({ videoThumbnail }) {
                 <p>{results?.seo?.tags?.join(", ") || "No tags available."}</p>
               </div>
             </div>
-            {(selectedFeatures?.includes('Noise Reduction') || selectedFeatures?.includes('Video Quality')) && (
+            {(selectedFeatures?.includes('Noise Reduction') || selectedFeatures?.includes('Video Quality') || selectedFeatures?.includes('Captions')) && (
               <button className="comparison-btn" onClick={handleCompare}>
                 Compare Results
               </button>

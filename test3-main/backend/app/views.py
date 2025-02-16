@@ -20,6 +20,8 @@ from .utils.clips.clips2.main import process_video
 from .utils.fetchData import fetch_video_metadata
 from .utils.video.anas import process_media
 from .utils.video.anas import process_media_shortform
+from .utils.Captions import DjangoVideoTranscriber
+
 # Ensure the YouTube API key is set in environment variables
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
 if not YOUTUBE_API_KEY:
@@ -268,7 +270,6 @@ def seo(request):
     else:
         return JsonResponse({"error": "Only POST requests are allowed"}, status=405)
 
-
 @csrf_exempt
 def optimize_shortform(request):
     if request.method == "POST":
@@ -285,7 +286,7 @@ def optimize_shortform(request):
                 return JsonResponse({"error": "No clip paths provided"}, status=400)
 
             # Sort features to ensure Video Quality comes before Noise Reduction
-            feature_order = ["SEO", "Video Quality", "Noise Reduction"]
+            feature_order = ["SEO", "Video Quality", "Noise Reduction", "Captions"]
             selected_features = sorted(
                 selected_features,
                 key=lambda feature: feature_order.index(feature) if feature in feature_order else len(feature_order)
@@ -321,6 +322,7 @@ def optimize_shortform(request):
                     except Exception as e:
                         logger.error(f"Error in SEO processing for {clip_path}: {e}")
                         clip_results["seo"] = {"error": str(e)}
+
                 upscaled_video_path = None
                 # Handle Video Quality feature
                 if "Video Quality" in selected_features:
@@ -341,7 +343,7 @@ def optimize_shortform(request):
                     except Exception as e:
                         logger.error(f"Error in video upscaling for {clip_path}: {e}")
                         clip_results["video_upscaling"] = {"error": str(e)}
-
+                enhanced_video_path=None
                 # Handle Noise Reduction feature
                 if "Noise Reduction" in selected_features:
                     try:
@@ -385,6 +387,36 @@ def optimize_shortform(request):
                             "status": "error"
                         }
 
+                # Handle Captions feature (last step)
+                if "Captions" in selected_features:
+                    try:
+                        # Use the final processed video path (upscaled or noise-reduced)
+                        final_video_path = enhanced_video_path or upscaled_video_path or current_clip_path
+
+                        # Initialize the DjangoVideoTranscriber
+                        transcriber = DjangoVideoTranscriber(
+                            model_path="turbo",  # Replace with actual model path
+                            video_path=final_video_path
+                        )
+
+                        # Process the video to add captions
+                        captioned_video_path = transcriber.process_video()
+
+                        # Update the results with the captioned video path
+                        clip_results["captions"] = {
+                            "processed_file_path": captioned_video_path,
+                            "status": "success"
+                        }
+
+                        # Update the current working path to the captioned video
+                        current_clip_path = captioned_video_path
+                        logger.info(f"Updated path after captioning: {current_clip_path}")
+
+                    except Exception as e:
+                        logger.error(f"Error in captioning for {clip_path}: {e}")
+                        clip_results["captions"] = {"error": str(e)}
+
+
             return JsonResponse({
                 "message": "Processing completed successfully",
                 "results": clip_results
@@ -398,7 +430,6 @@ def optimize_shortform(request):
             return JsonResponse({"error": f"Internal Server Error: {str(e)}"}, status=500)
     else:
         return JsonResponse({"error": "Only POST requests are allowed"}, status=405)
-
 @csrf_exempt
 def fetch_data(request):
     if request.method == "POST":

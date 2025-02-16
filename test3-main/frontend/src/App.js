@@ -19,7 +19,7 @@ const App = () => {
   const [selectedFeatures, setSelectedFeatures] = useState([]); // For selected features
 
   return (
-    <GoogleOAuthProvider clientId={process.env.REACT_APP_GOOGLE_CLIENT_ID}>
+    <GoogleOAuthProvider clientId={"599453212127-g5gvud37tdja21njimckkajjqlet1kmu.apps.googleusercontent.com"}>
       <BrowserRouter>
         <Routes>
           <Route path="/" element={<LoginPage />} />
