@@ -1,71 +1,58 @@
-import React, { useState } from 'react';
+import React, { useContext, useState } from 'react';
 import { GoogleOAuthProvider } from '@react-oauth/google';
-import { BrowserRouter, Routes, Route } from 'react-router-dom';
+import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import Clipper from './components/clipper';
 import SEO from './components/Seo';
 import ClipPreview from './components/ClipPreview';
-import OptimizeVideo from './components/optimizevideo'; // Import the OptimizeVideo component
+import OptimizeVideo from './components/optimizevideo';
 import Optimizevideo_shortform from './components/optimizevideo_short_form';
 import Seo_shortform from './components/Seo_shortform';
 import Comparison from './components/comparsion';
 import LoginPage from './components/LoginPage';
+import YouTubeAuthCallback from './components/YouTubeAuthCallback';
+import { UserProvider, UserContext } from "./components/UserContext";
+
+// ✅ Create Protected Route Component
+const PrivateRoute = ({ element }) => {
+  const { user } = useContext(UserContext);
+  return user ? element : <Navigate to="/" />;
+};
 
 const App = () => {
   // State to store the video URL, video ID, video thumbnail, and selected features
   const [videoUrl, setVideoUrl] = useState('');
   const [videoId, setVideoId] = useState('');
   const [videoThumbnail, setVideoThumbnail] = useState('');
-  const [selectedFeatures, setSelectedFeatures] = useState([]); // For selected features
-
+  const [selectedFeatures, setSelectedFeatures] = useState([]);
+  
   return (
-    <GoogleOAuthProvider clientId={"599453212127-g5gvud37tdja21njimckkajjqlet1kmu.apps.googleusercontent.com"}>
-      <BrowserRouter>
-        <Routes>
-          <Route path="/" element={<LoginPage />} />
-          <Route
-            path="/home"
-            element={<HomePage setVideoUrl={setVideoUrl} />}
-          />
-          <Route
-            path="/clipper"
-            element={
-              <Clipper
-                setVideoUrl={setVideoUrl}
-                setVideoId={setVideoId}
-                setVideoThumbnail={setVideoThumbnail}
-                setSelectedFeatures={setSelectedFeatures} // Pass setSelectedFeatures
-              />
-            }
-          />
-          <Route
-            path="/seo"
-            element={<SEO videoId={videoId} videoThumbnail={videoThumbnail} />}
-          />
-          <Route
-            path="/clippreview"
-            element={<ClipPreview videoUrl={videoUrl} />}
-          />
-          <Route
-            path="/optimizevideo"
-            element={<OptimizeVideo videoUrl={videoUrl} selectedFeatures={selectedFeatures} />} // Add the route for OptimizeVideo
-          />
-          <Route
-            path="/optimizevideo_shortform"
-            element={<Optimizevideo_shortform videoUrl={videoUrl} selectedFeatures={selectedFeatures} />} // Add the route for OptimizeVideo
-          />
-
-          <Route
-            path="/seo_shortform"
-            element={<Seo_shortform videoId={videoId} videoThumbnail={videoThumbnail} />}
-          />
-          <Route path="/comparison" element={<Comparison />} />
-          <Route path="/login" element={<LoginPage />} />
-
-          <Route path="*" element={<h2>Page Not Found</h2>} />
-        </Routes>
-      </BrowserRouter>
-    </GoogleOAuthProvider>
+    <UserProvider> {/* ✅ User Context wraps everything */}
+      <GoogleOAuthProvider clientId="245617066426-dtg7nbtpqfli3g590423l3me0n00rvni.apps.googleusercontent.com">
+        <BrowserRouter>
+          <Routes>
+            {/* ✅ Show Login First */}
+            <Route path="/" element={<LoginPage />} />
+            
+            {/* ✅ YouTube Auth Callback Route */}
+            <Route path="/youtube-auth-callback" element={<PrivateRoute element={<YouTubeAuthCallback />} />} />
+            
+            {/* ✅ Protect Routes - Users must be logged in */}
+            <Route path="/home" element={<PrivateRoute element={<HomePage setVideoUrl={setVideoUrl} />} />} />
+            <Route path="/clipper" element={<PrivateRoute element={<Clipper setVideoUrl={setVideoUrl} setVideoId={setVideoId} setVideoThumbnail={setVideoThumbnail} setSelectedFeatures={setSelectedFeatures} />} />} />
+            <Route path="/seo" element={<PrivateRoute element={<SEO videoId={videoId} videoThumbnail={videoThumbnail} />} />} />
+            <Route path="/clippreview" element={<PrivateRoute element={<ClipPreview videoUrl={videoUrl} />} />} />
+            <Route path="/optimizevideo" element={<PrivateRoute element={<OptimizeVideo videoUrl={videoUrl} selectedFeatures={selectedFeatures} />} />} />
+            <Route path="/optimizevideo_shortform" element={<PrivateRoute element={<Optimizevideo_shortform videoUrl={videoUrl} selectedFeatures={selectedFeatures} />} />} />
+            <Route path="/seo_shortform" element={<PrivateRoute element={<Seo_shortform videoId={videoId} videoThumbnail={videoThumbnail} />} />} />
+            <Route path="/comparison" element={<PrivateRoute element={<Comparison />} />} />
+            
+            {/* ✅ Handle 404 */}
+            <Route path="*" element={<h2>Page Not Found</h2>} />
+          </Routes>
+        </BrowserRouter>
+      </GoogleOAuthProvider>
+    </UserProvider>
   );
 };
 

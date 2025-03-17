@@ -45,6 +45,7 @@ class AudioEnhancer:
             "echo": {},
             "clarity": {},
             "music_detection": {}
+            
         }
         
         for key in aggregated:
@@ -309,27 +310,25 @@ class AudioEnhancer:
         stft = librosa.stft(segment)
         mag_spec = np.abs(stft)
         
-        # Calculate various noise metrics
-        noise_floor = np.percentile(mag_spec, 15, axis=1)
+        noise_floor = np.percentile(mag_spec, 20, axis=1)  # Increase percentile to be less aggressive
         spectral_flatness = librosa.feature.spectral_flatness(S=mag_spec)[0]
         
-        # Analyze frequency bands
         freqs = librosa.fft_frequencies(sr=sr)
         speech_band_mask = (freqs >= 300) & (freqs <= 3400)
         speech_band_energy = np.mean(mag_spec[speech_band_mask], axis=1)
         background_energy = np.mean(mag_spec[~speech_band_mask], axis=1)
         
-        # Calculate SNR and other metrics
         signal_power = np.mean(speech_band_energy ** 2)
         noise_power = np.mean(background_energy ** 2)
         snr = 10 * np.log10(signal_power / (noise_power + 1e-10))
-        
+
         return {
             "noise_level": float(np.mean(noise_floor)),
-            "is_noisy": bool(snr < 15 or np.mean(spectral_flatness) > 0.4),
+            "is_noisy": bool(snr < 10 or np.mean(spectral_flatness) > 0.5),  # Make it less strict
             "snr": float(snr),
             "spectral_flatness": float(np.mean(spectral_flatness))
         }
+
 
     def _detect_echo(self, segment: np.ndarray, sr: int) -> Dict[str, Any]:
         """Detect echo in audio segment."""
@@ -415,21 +414,28 @@ class AudioEnhancer:
         return enhanced_segments
 
     def _apply_enhancements(
-        self, 
-        segment: np.ndarray, 
-        sr: int, 
-        analysis_results: Dict[str, Any]
+    self, 
+    segment: np.ndarray, 
+    sr: int, 
+    analysis_results: Dict[str, Any]
     ) -> np.ndarray:
-        """Apply audio enhancements based on analysis."""
+    
         enhanced = segment.copy()
-        
+    
+    # Check if music is detected
+        is_music = analysis_results.get("music_detection", {}).get("has_music", False)
+
         if "noise_reduction" in analysis_results.get("recommended_enhancements", []):
-            enhanced = self._apply_noise_reduction(enhanced, sr)
-            
+            if not is_music:  # Skip noise reduction if it's music
+                enhanced = self._apply_noise_reduction(enhanced, sr)
+            else:
+                print("Skipping noise reduction for music segment.")
+
         if "volume_normalization" in analysis_results.get("recommended_enhancements", []):
             enhanced = self._apply_volume_normalization(enhanced, sr)
-            
+
         return enhanced
+
 
     def _apply_noise_reduction(self, audio: np.ndarray, sr: int) -> np.ndarray:
         """Apply noise reduction to audio segment."""

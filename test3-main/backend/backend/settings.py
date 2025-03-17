@@ -17,14 +17,14 @@ DEBUG = os.getenv('DEBUG', 'True') == 'True'
 
 # Hosts allowed to access the application
 ALLOWED_HOSTS = os.getenv('ALLOWED_HOSTS', 'localhost,127.0.0.1').split(',')
-
+GOOGLE_OAUTH2_CLIENT_SECRETS_JSON = os.path.join(BASE_DIR, 'client_secret.json')
 # Installed apps
-INSTALLED_APPS = [
-    'django.contrib.admin',
+INSTALLED_APPS = ['django.contrib.admin',
     'django.contrib.auth',
     'django.contrib.contenttypes',
     'django.contrib.sessions',
     'django.contrib.messages',
+    'rest_framework_simplejwt',
     'django.contrib.staticfiles',
     'rest_framework',
     'corsheaders',
@@ -32,10 +32,11 @@ INSTALLED_APPS = [
     'allauth',
     'allauth.account',
     'allauth.socialaccount',
+    'rest_framework.authtoken',
     'allauth.socialaccount.providers.google',  # Google OAuth
     'app',  # Replace 'app' with your app name
 ]
-
+CSRF_TRUSTED_ORIGINS = ['http://localhost:3000']
 # Middleware
 MIDDLEWARE = [
     'django.middleware.security.SecurityMiddleware',
@@ -123,9 +124,11 @@ DEFAULT_AUTO_FIELD = 'django.db.models.BigAutoField'
 # Django REST framework settings
 REST_FRAMEWORK = {
     'DEFAULT_PERMISSION_CLASSES': [
+        'rest_framework.permissions.IsAuthenticated',
         'rest_framework.permissions.AllowAny',  # Update this for production security
     ],
     'DEFAULT_AUTHENTICATION_CLASSES': [
+         'rest_framework.authentication.TokenAuthentication',
         'rest_framework.authentication.SessionAuthentication',
         'rest_framework.authentication.BasicAuthentication',
     ],
@@ -172,7 +175,7 @@ os.makedirs(MODELS_DIR, exist_ok=True)
 AWS_ACCESS_KEY_ID = os.getenv('AWS_ACCESS_KEY_ID')
 AWS_SECRET_ACCESS_KEY = os.getenv('AWS_SECRET_ACCESS_KEY')
 AWS_STORAGE_BUCKET_NAME = os.getenv('AWS_STORAGE_BUCKET_NAME')
-
+GOOGLE_OAUTH_CLIENT_ID=os.getenv('GOOGLE_OAUTH_CLIENT_ID')
 # YouTube API Key
 YOUTUBE_API_KEY = os.getenv('YOUTUBE_API_KEY')  # Store the API key in your .env file
 OPENAI_API_KEY = os.getenv('OPENAI_API_KEY')

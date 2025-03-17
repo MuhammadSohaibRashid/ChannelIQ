@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Video Clipper - Create Clips from Videos</title>
+  <link rel="stylesheet" href="HomePage.css">
+  <link rel="stylesheet" href="base.css">
+</head>
+<body>
+  <div class="home">
+    <!-- Header Section -->
+    <header class="header">
+      <div class="header__logo">Clip<span class="header__logo-highlight">Master</span></div>
+      
+      <nav class="header__nav">
+        <span class="header__nav-item">Features</span>
+        <span class="header__nav-item">Pricing</span>
+        <span class="header__nav-item">FAQ</span>
+        <span class="header__nav-item">Contact</span>
+      </nav>
+      
+      <!-- User Account Section - Switch between these two div blocks based on login status -->
+      <!-- Logged In -->
+      <div class="user">
+        <img src="avatar-placeholder.jpg" alt="User Avatar" class="user__avatar">
+        <span class="user__name">John Doe</span>
+        <button class="user__logout-btn">Logout</button>
+      </div>
+      
+      <!-- Not Logged In (Uncomment when needed) -->
+      <!--
+      <div class="user">
+        <button class="user__login-btn">Login</button>
+      </div>
+      -->
+    </header>
+
+    <!-- Main Content Section -->
+    <main class="hero">
+      <h1 class="hero__title">
+        Create Video Clips With a Simple <span class="hero__title-click">Click</span>
+      </h1>
+      
+      <p class="hero__subtitle">
+        Turn long videos into engaging clips <span class="hero__sparkle">✨</span>
+      </p>
+      
+      <div class="preview">
+        <img src="preview.jpg" alt="Video Clipper Preview" class="preview__image">
+      </div>
+      
+      <div class="input">
+        <div class="input__wrapper">
+          <input type="text" class="input__field" placeholder="Paste YouTube or Vimeo URL here..." id="videoUrl">
+          <button class="input__button">Get Clips</button>
+        </div>
+        <!-- Show this only when there's an error -->
+        <!-- <p class="input__error">Please enter a valid video URL</p> -->
+      </div>
+    </main>
+  </div>
+
+  <script>
+    // Basic validation for demo purposes
+    document.querySelector('.input__button').addEventListener('click', function() {
+      const inputValue = document.getElementById('videoUrl').value;
+      const inputWrapper = document.querySelector('.input__wrapper');
+      
+      if (!inputValue || (!inputValue.includes('youtube.com') && !inputValue.includes('vimeo.com'))) {
+        inputWrapper.classList.add('input__wrapper--error');
+        
+        // Create error message if it doesn't exist
+        if (!document.querySelector('.input__error')) {
+          const errorMsg = document.createElement('p');
+          errorMsg.className = 'input__error';
+          errorMsg.textContent = 'Please enter a valid YouTube or Vimeo URL';
+          document.querySelector('.input').appendChild(errorMsg);
+        }
+      } else {
+        inputWrapper.classList.remove('input__wrapper--error');
+        
+        // Remove error message if it exists
+        const errorMsg = document.querySelector('.input__error');
+        if (errorMsg) {
+          errorMsg.remove();
+        }
+        
+        // Here you would handle the form submission
+        console.log('Processing URL:', inputValue);
+      }
+    });
+  </script>
+</body>
+</html>

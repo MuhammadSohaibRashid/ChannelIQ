@@ -24,33 +24,18 @@ def extract_times(json_string, min_duration, max_duration):
 
         # Parse the JSON string
         data = json.loads(json_string)
-
-        # Extract and validate highlights
+        print("Time Given by Openai: ", data)
+        
+        # Extract highlights without validating duration
         highlights = []
         for clip in data:
             try:
                 start_time = float(clip["start"])
                 end_time = float(clip["end"])
-
-                # Validate duration
-                if validate_clip_duration(start_time, end_time, min_duration, max_duration):
-                    highlights.append((int(start_time), int(end_time)))
-                else:
-                    print(
-                        f"Warning: Clip duration ({end_time - start_time}s) outside allowed range ({min_duration}-{max_duration}s)")
-
-                    # Attempt to adjust clip length if too long
-                    if end_time - start_time > max_duration:
-                        new_end = start_time + max_duration
-                        highlights.append((int(start_time), int(new_end)))
-                        print(f"Adjusted clip to: {start_time}-{new_end}")
-
-                    # Attempt to extend clip if too short
-                    elif end_time - start_time < min_duration:
-                        new_end = min(start_time + min_duration, end_time + (min_duration - (end_time - start_time)))
-                        highlights.append((int(start_time), int(new_end)))
-                        print(f"Adjusted clip to: {start_time}-{new_end}")
-
+                
+                # Add all clips without duration validation
+                highlights.append((int(start_time), int(end_time)))
+                
             except (ValueError, TypeError) as e:
                 print(f"Error processing clip: {e}")
                 continue
@@ -75,26 +60,45 @@ def GetHighlight(transcription, num_highlights, clip_length):
     # Define minimum duration (e.g., 15 seconds or 50% of max length)
     min_duration = max(15, clip_length * 0.5)
 
-    system_prompt = f'''Based on the transcription provided with start and end times, highlight up to {num_highlights} main parts of the video, each between {min_duration} and {clip_length} seconds long. These highlights will be directly converted into short, engaging clips for platforms like TikTok.
+    system_prompt = f'''You are an expert video editor specializing in creating engaging short-form content. Analyze this transcription (which includes timestamps) and identify the {num_highlights} most compelling segments for short clips.
 
-Requirements:
-1. Each clip MUST be between {min_duration} and {clip_length} seconds long.
-2. Each clip should be a single continuous part of the video.
-3. The highlights should be interesting and engaging.
-4. Provide exactly {num_highlights} clips (or fewer only if not enough suitable content).
-5. Format timestamps as decimal numbers (e.g., 12.5 not "12:30").
+THE MOST IMPORTANT REQUIREMENT (CRITICAL): Each clip MUST be EXACTLY between {min_duration} and {clip_length} seconds long. This is a hard requirement - clips shorter than {min_duration} seconds or longer than {clip_length} seconds will be rejected.
 
-Format:
+SELECTING SEGMENTS:
+- Look for moments that work well as standalone clips with clear beginnings and endings
+- Find segments that are AS CLOSE AS POSSIBLE to {clip_length} seconds long
+- Target complete thoughts or stories (don't cut mid-sentence)
+- Prioritize:
+  * Surprising revelations or "aha moments"
+  * Concise explanations of interesting concepts
+  * Emotional or humorous moments
+  * High-energy or dramatic segments
+
+TIMING INSTRUCTIONS (EXTREMELY IMPORTANT):
+- Calculate your start and end times carefully to ensure clips are within the {min_duration}-{clip_length} second range
+- DOUBLE-CHECK your start/end timestamps and verify each clip's duration before submitting
+- If a segment seems too short, EXTEND it to include contextually relevant content but don't make it too long
+- Choose natural break points at the beginning and end of segments
+- Aim to make clips as close to {clip_length} seconds as possible - longer clips (within the limit) are preferred
+- The ending time must be the last word spoken before the timestamp(00.00 - 10.45 i am aqib so it selects 10.45)
+
+PROVIDE EXACTLY THIS FORMAT:
 [
   {{
     "start": <start_time_in_seconds>,
-    "content": "Brief description of clip content",
-    "end": <end_time_in_seconds>
+    "end": <end_time_in_seconds>,
+    "content": "Brief description of clip content and why it's engaging"
   }}
 ]
-Ensure each clip duration is within the specified range. Invalid durations will be rejected.'''
+
+FINAL VERIFICATION (MANDATORY):
+- Start/end times must be decimal numbers (e.g., 12.5, not "12:30")
+- Calculate the duration of each clip by subtracting start from end
+- Verify ALL clips are between {min_duration} and {clip_length} seconds
+- If a clip is too short, extend it to include more context but dont make it too long that it exceeds {clip_length} seconds'''
 
     try:
+        print(transcription)
         response = client.chat.completions.create(
             model="gpt-4o-mini",
             temperature=0.7,
@@ -114,21 +118,11 @@ Ensure each clip duration is within the specified range. Invalid durations will 
         elif len(highlights) < num_highlights:
             print(f"Warning: Only found {len(highlights)} valid highlights")
 
-        # Verify clip durations
-        invalid_clips = [
-            i for i, (start, end) in enumerate(highlights)
-            if not validate_clip_duration(start, end, min_duration, clip_length)
-        ]
-
-        if invalid_clips:
-            print(f"Found {len(invalid_clips)} invalid clip durations")
-
         return highlights
 
     except Exception as e:
         print(f"Error: {e}")
         return []
-
 
 if __name__ == "__main__":
     # Test the function

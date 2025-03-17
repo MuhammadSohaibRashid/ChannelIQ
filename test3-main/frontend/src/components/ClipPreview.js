@@ -1,8 +1,10 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { UserContext } from "./UserContext"; // Import User Context
 import "./clippreview.css";
 
 function ClipPreview() {
+    const { user, logout } = useContext(UserContext); // Get user details from Context
     const location = useLocation();
     const navigate = useNavigate();
     const { clipPaths = [], videoURL = null } = location.state || {};
@@ -72,9 +74,9 @@ function ClipPreview() {
                 const result = await response.json();
                 console.log("API result:", result);
                 if (isSEOIncluded) {
-                    navigate("/seo_shortform", { state: { message: result.message, results: result.results,selectedFeatures,selectedClip } });
+                    navigate("/seo_shortform", { state: { message: result.message, results: result.results, selectedFeatures, selectedClip } });
                 } else {
-                    navigate("/optimizevideo_shortform", { state: { message: result.message, results: result.results,selectedFeatures,selectedClip } });
+                    navigate("/optimizevideo_shortform", { state: { message: result.message, results: result.results, selectedFeatures, selectedClip } });
                 }
             } else {
                 console.error("API call failed:", response.statusText);
@@ -94,16 +96,28 @@ function ClipPreview() {
 
     return (
         <div className="clipping-app">
+            {/* 🔹 NAVBAR */}
             <header className="header">
-                <h1 className="logo">
+                <h1 className="logo" onClick={() => navigate("/")}>
                     <span className="bold">Channel-</span>
                     <span className="highlight">IQ</span>
                 </h1>
+
                 <nav className="nav">
                     <a href="#clipper">Clipper</a>
-                    <a href="#pricing">Pricing</a>
-                    <button className="sign-in">Sign in</button>
-                    <button className="sign-up">Sign up</button>
+                    
+                    {/* 🔹 Show User Profile Instead of Sign-in */}
+                    {user ? (
+                        <div className="user-info">
+                            <img src={user.picture} alt="User" className="user-avatar" />
+                            <span className="username">{user.name}</span>
+                            <button className="logout-btn" onClick={logout}>Logout</button>
+                        </div>
+                    ) : (
+                        <button className="login-btn" onClick={() => navigate("/login")}>
+                            Login
+                        </button>
+                    )}
                 </nav>
             </header>
 
@@ -141,12 +155,10 @@ function ClipPreview() {
 
                     <div className="features">
                         <h3>Select Features to Apply:</h3>
-                        {["Noise Reduction", "Video Quality", "SEO","Captions"].map((feature) => (
+                        {["Noise Reduction", "Video Quality", "SEO", "Captions"].map((feature) => (
                             <button
                                 key={feature}
-                                className={`feature-btn ${
-                                    selectedFeatures.includes(feature) ? "active" : ""
-                                }`}
+                                className={`feature-btn ${selectedFeatures.includes(feature) ? "active" : ""}`}
                                 onClick={() => handleFeatureToggle(feature)}
                             >
                                 {feature}

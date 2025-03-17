@@ -1,11 +1,14 @@
-import React, { useEffect, useState } from 'react';
+import React, { useEffect, useState, useContext } from 'react';
 import { useLocation, useNavigate } from 'react-router-dom';
 import axios from 'axios';
 import "./comparsion.css";
+import { UserContext } from "./UserContext"; // Import User Context
 
 const Comparison = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useContext(UserContext); // Access User Context
+
   const { results, videoURL, selectedFeatures, seoData, localVideoPath } = location.state || {};
   const [originalSeoData, setOriginalSeoData] = useState(null);
   const [error, setError] = useState(null);
@@ -13,7 +16,7 @@ const Comparison = () => {
   const getMediaPath = async (path) => {
     if (!path) return null;
     const filename = path.split("\\").pop();
-    
+
     // Try media/videos first
     const mediaUrl = `http://127.0.0.1:8000/media/videos/${filename}`;
     try {
@@ -39,8 +42,6 @@ const Comparison = () => {
     return null; // Return null if file not found in either location
   };
 
-  // Remove the separate getprocessedPath function since it's now handled in getMediaPath
-
   const fetchOriginalSeo = async () => {
     try {
       const payload = { videoURL };
@@ -54,7 +55,6 @@ const Comparison = () => {
     }
   };
 
-  // Since getMediaPath is now async, we need to modify the rendering functions
   const [videoUrls, setVideoUrls] = useState({
     original: null,
     enhanced: null
@@ -65,7 +65,7 @@ const Comparison = () => {
       if (localVideoPath) {
         const originalUrl = await getMediaPath(localVideoPath);
         let enhancedUrl = null;
-        
+
         if (results?.audio_processing?.processed_file_path) {
           enhancedUrl = await getMediaPath(results.audio_processing.processed_file_path);
         } else if (results?.video_upscaling?.processed_file_path) {
@@ -155,24 +155,28 @@ const Comparison = () => {
   };
 
   return (
-    <div className="seo-app">
+    <div className="comparison-app">
+      {/* Navbar with User Session */}
       <header className="header">
-        <h1 className="logo">
+        <h1 className="logo" onClick={() => navigate("/")}>
           <span className="bold">Channel-</span>
           <span className="highlight">IQ</span>
         </h1>
+
         <nav className="nav">
-          <a>Clipper</a>
-          <a>SEO</a>
-          <a>Thumbnail</a>
-          <a>Pricing</a>
-          <button className="sign-in">Sign in</button>
-          <button className="sign-up">Sign up</button>
-          <button
-            className="home-button"
-            onClick={() => navigate('/clipper')}
-          >
-            Home
+          {user ? (
+            <div className="user-info">
+              <img src={user.picture} alt="User" className="user-avatar" />
+              <span className="username">{user.name}</span>
+              <button className="logout-btn" onClick={logout}>Logout</button>
+            </div>
+          ) : (
+            <button className="login-btn" onClick={() => navigate("/login")}>
+              Login
+            </button>
+          )}
+          <button className="home-button" onClick={() => navigate("/clipper")}>
+            Back to Clipper
           </button>
         </nav>
       </header>
@@ -180,9 +184,7 @@ const Comparison = () => {
       <div className="comparison-container">
         <h1 className="comparison-title">Video Optimization Results</h1>
         {selectedFeatures.includes('SEO') && renderSeoComparison()}
-        {(selectedFeatures.includes('Noise Reduction') || 
-          selectedFeatures.includes('Video Quality')) && 
-          renderVideoComparison()}
+        {(selectedFeatures.includes('Noise Reduction') || selectedFeatures.includes('Video Quality')) && renderVideoComparison()}
       </div>
     </div>
   );

@@ -31,7 +31,8 @@ def transcribeAudio(audio_path, language=None):
             beam_size=5,
             language=language,
             max_new_tokens=128,
-            condition_on_previous_text=False
+            condition_on_previous_text=False,
+            vad_filter=True
         )
         
         # Extract text segments

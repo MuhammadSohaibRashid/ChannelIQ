@@ -1,10 +1,12 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { UserContext } from "./UserContext"; // Import User Context
 import "./optimizevideo.css";
 
 const Optimizevideo_shortform = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useContext(UserContext); // User session
   const [videoPath, setVideoPath] = useState("");
   const [message, setMessage] = useState("");
   const [enhancementType, setEnhancementType] = useState("");
@@ -18,7 +20,7 @@ const Optimizevideo_shortform = () => {
       // Extract paths for audio, video, and captions
       const audioEnhancedPath = results.audio_processing?.processed_file_path;
       const videoEnhancedPath = results.video_upscaling?.processed_file_path;
-      const captionedVideoPath = results.captions?.processed_file_path; // New: Captioned video path
+      const captionedVideoPath = results.captions?.processed_file_path; // Captioned video path
 
       let selectedPath = "";
       let enhancementType = "";
@@ -27,7 +29,7 @@ const Optimizevideo_shortform = () => {
       if (captionedVideoPath) {
         selectedPath = captionedVideoPath;
         enhancementType = "Captions Added";
-        setIsCaptionAdded(true); // Set captions state to true
+        setIsCaptionAdded(true);
       } else if (audioEnhancedPath) {
         selectedPath = audioEnhancedPath;
         enhancementType = "Audio Enhanced";
@@ -38,7 +40,7 @@ const Optimizevideo_shortform = () => {
 
       // Set the video path and enhancement type
       if (selectedPath) {
-        const filename = selectedPath.split('\\').pop();
+        const filename = selectedPath.split("\\").pop();
         if (filename) {
           setVideoPath(`http://127.0.0.1:8000/media/processed/${filename}`);
           setMessage("Video processing completed successfully!");
@@ -54,9 +56,9 @@ const Optimizevideo_shortform = () => {
     const { results, selectedFeatures, selectedClip } = location.state;
 
     // Extract filename from the URL path
-    const originalFilename = selectedClip.split('/').pop();
+    const originalFilename = selectedClip.split("/").pop();
 
-    navigate('/comparison', {
+    navigate("/comparison", {
       state: {
         results: results,
         selectedFeatures,
@@ -69,18 +71,27 @@ const Optimizevideo_shortform = () => {
 
   return (
     <div className="clipping-app">
+      {/* Navbar with User Session */}
       <header className="header">
-        <h1 className="logo">
+        <h1 className="logo" onClick={() => navigate("/")}>
           <span className="bold">Channel-</span>
           <span className="highlight">IQ</span>
         </h1>
+
         <nav className="nav">
-          <a href="#clipper">Clipper</a>
-          <a href="#pricing">Pricing</a>
-          <button className="sign-in">Sign in</button>
-          <button className="sign-up">Sign up</button>
-          <button className="home-button" onClick={() => navigate('/clipper')}>
-            Home
+          {user ? (
+            <div className="user-info">
+              <img src={user.picture} alt="User" className="user-avatar" />
+              <span className="username">{user.name}</span>
+              <button className="logout-btn" onClick={logout}>Logout</button>
+            </div>
+          ) : (
+            <button className="login-btn" onClick={() => navigate("/login")}>
+              Login
+            </button>
+          )}
+          <button className="home-button" onClick={() => navigate("/clipper")}>
+            Back to Clipper
           </button>
         </nav>
       </header>

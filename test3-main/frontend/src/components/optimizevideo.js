@@ -1,10 +1,13 @@
-import React, { useEffect, useState } from "react";
+import React, { useEffect, useState, useContext } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
+import { UserContext } from "./UserContext"; // Import User Context
 import "./optimizevideo.css";
 
 const OptimizeVideo = () => {
   const location = useLocation();
   const navigate = useNavigate();
+  const { user, logout } = useContext(UserContext); // Get user session
+
   const [videoPath, setVideoPath] = useState("");
   const [message, setMessage] = useState("");
   const [enhancementType, setEnhancementType] = useState("");
@@ -34,7 +37,7 @@ const OptimizeVideo = () => {
       }
 
       if (selectedPath) {
-        const filename = selectedPath.split('\\').pop();
+        const filename = selectedPath.split("\\").pop();
         if (filename) {
           setVideoPath(`http://127.0.0.1:8000/media/processed/${filename}`);
           setMessage("Video processing completed successfully!");
@@ -48,7 +51,7 @@ const OptimizeVideo = () => {
   const handleCompare = () => {
     const { results, selectedFeatures, videoURL, localVideoPath } = location.state;
 
-    navigate('/comparison', {
+    navigate("/comparison", {
       state: {
         results,
         selectedFeatures,
@@ -61,21 +64,27 @@ const OptimizeVideo = () => {
 
   return (
     <div className="clipping-app">
+      {/* Navbar with User Session */}
       <header className="header">
-        <h1 className="logo">
+        <h1 className="logo" onClick={() => navigate("/")}>
           <span className="bold">Channel-</span>
           <span className="highlight">IQ</span>
         </h1>
+
         <nav className="nav">
-          <a>Clipper</a>
-          <a>Pricing</a>
-          <button className="sign-in">Sign in</button>
-          <button className="sign-up">Sign up</button>
-          <button
-            className="home-button"
-            onClick={() => navigate('/clipper')}
-          >
-            Home
+          {user ? (
+            <div className="user-info">
+              <img src={user.picture} alt="User" className="user-avatar" />
+              <span className="username">{user.name}</span>
+              <button className="logout-btn" onClick={logout}>Logout</button>
+            </div>
+          ) : (
+            <button className="login-btn" onClick={() => navigate("/login")}>
+              Login
+            </button>
+          )}
+          <button className="home-button" onClick={() => navigate("/clipper")}>
+            Back to Clipper
           </button>
         </nav>
       </header>

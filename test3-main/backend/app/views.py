@@ -5,6 +5,13 @@ from urllib.parse import urlparse, parse_qs
 import boto3
 import yt_dlp
 import logging
+from rest_framework import status
+from rest_framework.permissions import AllowAny
+from google.auth.transport import requests
+from django.contrib.auth import get_user_model
+from rest_framework.authtoken.models import Token
+from google.oauth2 import id_token
+from django.shortcuts import redirect
 from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 import subprocess
@@ -14,13 +21,22 @@ import json
 import re
 from django.core.files.storage import FileSystemStorage
 from django.http import JsonResponse
-from .utils.SEO import YouTubeSEOGenerator
+from .utils.SEO import EnhancedYouTubeSEOGenerator
 from .utils.Audio.audio import AudioEnhancer
 from .utils.clips.clips2.main import process_video
 from .utils.fetchData import fetch_video_metadata
 from .utils.video.anas import process_media
 from .utils.video.anas import process_media_shortform
 from .utils.Captions import DjangoVideoTranscriber
+from .utils.s3uploader import S3Uploader
+import google.oauth2.credentials
+import google_auth_oauthlib.flow
+import googleapiclient.discovery
+import googleapiclient.errors
+from googleapiclient.http import MediaFileUpload
+from rest_framework.decorators import api_view, permission_classes
+from rest_framework.permissions import IsAuthenticated
+from rest_framework.response import Response
 
 # Ensure the YouTube API key is set in environment variables
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -184,7 +200,7 @@ def seo(request):
             if "SEO" in selected_features:
                 try:
                     if video_url:
-                        seo_generator = YouTubeSEOGenerator()
+                        seo_generator = EnhancedYouTubeSEOGenerator()
                         seo_data = seo_generator.process_video(video_url)
                         results["seo"] = seo_data
                 except Exception as e:
@@ -316,7 +332,7 @@ def optimize_shortform(request):
                 # Handle SEO feature
                 if "SEO" in selected_features:
                     try:
-                        seo_generator = YouTubeSEOGenerator(current_clip_path)
+                        seo_generator = EnhancedYouTubeSEOGenerator(current_clip_path)
                         seo_data = seo_generator.process_video_shortform(current_clip_path)
                         clip_results["seo"] = seo_data
                     except Exception as e:
@@ -636,3 +652,279 @@ def download_video(request):
     except Exception as e:
         logger.exception("Unexpected error occurred")
         return JsonResponse({"error": f"Unexpected error: {str(e)}"}, status=500)
+def get_video(request, video_id):
+    """Get video URL by video ID"""
+    # Initialize S3 uploader
+    s3_uploader = S3Uploader(
+        aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+        aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+        bucket_name=settings.AWS_STORAGE_BUCKET_NAME,
+        region=getattr(settings, 'AWS_S3_REGION_NAME', None)
+    )
+
+    s3_key = f"videos/{video_id}.mp4"
+
+    # Check if the file exists in S3
+    if s3_uploader.file_exists_in_s3(s3_key):
+        video_url = s3_uploader.get_s3_url(s3_key)
+        return JsonResponse({
+            "video_id": video_id,
+            "url": video_url
+        })
+    else:
+        return JsonResponse({
+            "error": "Video not found"
+        }, status=404)
+# YouTube API scopes needed for video upload
+SCOPES = ['https://www.googleapis.com/auth/youtube.upload']
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def check_auth(request):
+    auth_header = request.headers.get('Authorization', 'No Token Provided')
+    print(f"🔍 Received Authorization Header: {auth_header}")
+    print(f"👤 Authenticated User: {request.user if request.user.is_authenticated else 'Not Authenticated'}")
+
+    if not request.user.is_authenticated:
+        return Response({'error': 'User not authenticated'}, status=401)
+
+    return Response({'is_authorized': True})
+
+@api_view(['GET'])
+@permission_classes([IsAuthenticated])
+def authorize_youtube(request):
+    """Initiate YouTube authorization flow"""
+    # Create OAuth 2.0 flow instance
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        os.path.join(settings.BASE_DIR, 'client_secret.json'),
+        scopes=SCOPES
+    )
+    
+    # Set redirect URI
+    flow.redirect_uri = request.build_absolute_uri('/api/youtube/callback/')
+    
+    # Generate authorization URL and state
+    authorization_url, state = flow.authorization_url(
+        access_type='offline',
+        include_granted_scopes='true',
+        prompt='consent'  # Force to always prompt for consent to get refresh token
+    )
+    
+    # Store state in session
+    request.session['youtube_auth_state'] = state
+    request.session['user_id'] = request.user.id
+    
+    # Redirect to authorization URL
+    return redirect(authorization_url)
+
+@api_view(['GET', 'POST'])
+@csrf_exempt
+def youtube_callback(request):
+    """Handle callback from YouTube authorization"""
+    # Get state from session
+    state = request.session.get('youtube_auth_state')
+    user_id = request.session.get('user_id')
+    
+    if not state or not user_id:
+        return JsonResponse({'error': 'Invalid state'}, status=400)
+    
+    # Get authorization code from request
+    code = request.GET.get('code')
+    if not code:
+        return JsonResponse({'error': 'No authorization code'}, status=400)
+    
+    # Create flow instance
+    flow = google_auth_oauthlib.flow.Flow.from_client_secrets_file(
+        os.path.join(settings.BASE_DIR, 'client_secret.json'),
+        scopes=SCOPES,
+        state=state
+    )
+    flow.redirect_uri = request.build_absolute_uri('/api/youtube/callback/')
+    
+    # Exchange authorization code for access token
+    flow.fetch_token(code=code)
+    credentials = flow.credentials
+    
+    # Save credentials to database
+    from .models import YouTubeAuth
+    from django.contrib.auth import get_user_model
+    
+    User = get_user_model()
+    user = User.objects.get(id=user_id)
+    
+    youtube_auth, created = YouTubeAuth.objects.get_or_create(user=user)
+    youtube_auth.credentials = {
+        'token': credentials.token,
+        'refresh_token': credentials.refresh_token,
+        'token_uri': credentials.token_uri,
+        'client_id': credentials.client_id,
+        'client_secret': credentials.client_secret,
+        'scopes': credentials.scopes
+    }
+    youtube_auth.save()
+    
+    # Redirect to frontend callback page
+    frontend_callback_url = settings.FRONTEND_URL + '/youtube-auth-callback'
+    return redirect(frontend_callback_url + '?code=' + code)
+
+@api_view(['POST'])
+@permission_classes([IsAuthenticated])
+def upload_video(request):
+    """Upload video to YouTube"""
+    user = request.user
+    
+    # Check if user has valid YouTube credentials
+    try:
+        youtube_auth = user.youtubeauth
+        if not youtube_auth.is_valid():
+            return Response({'error': 'YouTube authorization has expired'}, status=401)
+    except:
+        return Response({'error': 'YouTube authorization required'}, status=401)
+    
+    # Get video file and metadata
+    video_file = request.FILES.get('video')
+    title = request.POST.get('title')
+    description = request.POST.get('description')
+    tags = request.POST.get('tags', '').split(',') if request.POST.get('tags') else []
+    
+    if not video_file:
+        return Response({'error': 'No video file provided'}, status=400)
+    
+    if not title:
+        return Response({'error': 'Title is required'}, status=400)
+    
+    # Save video file temporarily
+    import tempfile
+    import os
+    
+    temp_file = tempfile.NamedTemporaryFile(delete=False, suffix='.mp4')
+    for chunk in video_file.chunks():
+        temp_file.write(chunk)
+    temp_file.close()
+    
+    try:
+        # Get credentials from database
+        creds_data = youtube_auth.credentials
+        credentials = google.oauth2.credentials.Credentials(
+            token=creds_data.get('token'),
+            refresh_token=creds_data.get('refresh_token'),
+            token_uri=creds_data.get('token_uri'),
+            client_id=creds_data.get('client_id'),
+            client_secret=creds_data.get('client_secret'),
+            scopes=creds_data.get('scopes')
+        )
+        
+        # Create YouTube service
+        youtube = googleapiclient.discovery.build('youtube', 'v3', credentials=credentials)
+        
+        # Create video metadata
+        body = {
+            'snippet': {
+                'title': title,
+                'description': description,
+                'tags': tags,
+                'categoryId': '22'  # People & Blogs category
+            },
+            'status': {
+                'privacyStatus': 'private',  # Start as private, can be changed later
+                'selfDeclaredMadeForKids': False
+            }
+        }
+        
+        # Upload video file
+        media = MediaFileUpload(
+            temp_file.name,
+            mimetype='video/mp4',
+            resumable=True
+        )
+        
+        # Execute upload request
+        request = youtube.videos().insert(
+            part='snippet,status',
+            body=body,
+            media_body=media
+        )
+        
+        response = request.execute()
+        
+        # Update credentials if they were refreshed
+        if credentials.token != creds_data.get('token'):
+            youtube_auth.credentials = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
+            }
+            youtube_auth.save()
+        
+        # Return video ID
+        return Response({'success': True, 'video_id': response['id']})
+        
+    except Exception as e:
+        print(f"YouTube upload error: {str(e)}")
+        return Response({'error': str(e)}, status=500)
+        
+    finally:
+        # Clean up temporary file
+        if os.path.exists(temp_file.name):
+            os.unlink(temp_file.name)
+User = get_user_model()
+
+@api_view(['POST'])
+@permission_classes([AllowAny])
+def google_login(request):
+    """Verify Google token and create/login user"""
+    token = request.data.get('token')
+    
+    if not token:
+        return Response({'error': 'Token is required'}, status=status.HTTP_400_BAD_REQUEST)
+    
+    try:
+        # Verify the token
+        idinfo = id_token.verify_oauth2_token(
+            token, 
+            requests.Request(), 
+            settings.GOOGLE_OAUTH_CLIENT_ID
+        )
+        
+        if 'email' not in idinfo:
+            return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
+
+        # Extract user details
+        email = idinfo['email']
+        name = idinfo.get('name', '')
+        picture = idinfo.get('picture', '')
+
+        # Find or create the user
+        user, created = User.objects.get_or_create(
+            email=email,
+            defaults={
+                'username': email,  
+                'first_name': name.split(' ')[0] if ' ' in name else name,
+                'last_name': name.split(' ')[1] if ' ' in name else '',
+                'is_active': True,
+            }
+        )
+
+        # Generate authentication token
+        token, _ = Token.objects.get_or_create(user=user)
+
+        return Response({
+            'token': token.key,
+            'user': {
+                'id': user.id,
+                'email': user.email,
+                'name': name,
+                'picture': picture,
+                'is_new': created
+            }
+        })
+        
+    except ValueError:
+        return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
+    
+    except Exception as e:
+        print(f"Google Auth Error: {str(e)}") 
+        return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)

@@ -28,11 +28,9 @@ const LoginPage = () => {
   // Check YouTube auth status when user logs in
   const checkYouTubeAuth = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      console.log("Stored Auth Token:", token);
-      const response = await axios.get('http://127.0.0.1:8000/api/youtube/check-auth/', {
+      const response = await axios.get('/api/youtube/check-auth/', {
         headers: {
-          Authorization: `Token ${token}`
+          Authorization: `Bearer ${localStorage.getItem('authToken')}`
         }
       });
       
@@ -52,49 +50,37 @@ const LoginPage = () => {
   // Handle Google Login Success
   const handleGoogleLoginSuccess = async (response) => {
     try {
-        const decodedUser = jwtDecode(response.credential); // Decode Google token
-        console.log("Google Login Success:", decodedUser);
-        
-        // Send request directly to Django backend
-        const authResponse = await fetch("http://127.0.0.1:8000/api/auth/google-login/", {
-            method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ token: response.credential }) // Send Google token
-        });
-
-        if (!authResponse.ok) {
-            throw new Error("Google login failed");
-        }
-
-        const data = await authResponse.json(); // Parse response JSON
-
-        // Store auth token
-        localStorage.setItem("authToken", data.token);
-
-        // Save user in context & localStorage
-        login({
-            ...decodedUser,
-            token: data.token
-        });
-
-        setAuthStatus(prev => ({
-            ...prev,
-            google: true
-        }));
-
-        // Check YouTube authorization
-        await checkYouTubeAuth();
-
-        // Redirect to Home Page
-        navigate("/home");
-
+      const decodedUser = jwtDecode(response.credential); // Decode the token
+      console.log("Google Login Success:", decodedUser);
+      
+      // Get authentication token from backend
+      const authResponse = await axios.post('/api/auth/google-login/', {
+        token: response.credential
+      });
+      
+      // Store auth token
+      localStorage.setItem('authToken', authResponse.data.token);
+      
+      // Save user in context & localStorage
+      login({
+        ...decodedUser,
+        token: authResponse.data.token
+      });
+      
+      setAuthStatus(prev => ({
+        ...prev,
+        google: true
+      }));
+      
+      // Check YouTube authorization
+      await checkYouTubeAuth();
+      
+      // Redirect to Home Page
+      navigate("/home");
     } catch (error) {
-        console.error("Error processing Google login:", error);
+      console.error("Error processing Google login:", error);
     }
-};
-
+  };
 
   // Handle Google Login Failure
   const handleGoogleLoginFailure = () => {

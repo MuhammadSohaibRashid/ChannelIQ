@@ -2,6 +2,8 @@
 from django.contrib import admin
 from django.urls import path, include
 from django.http import HttpResponse
+from django.views.generic import TemplateView
+
 # A simple view for the root URL
 def index(request):
     return HttpResponse("Welcome to the Django API!")
