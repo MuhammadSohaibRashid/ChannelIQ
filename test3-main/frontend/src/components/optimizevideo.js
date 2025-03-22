@@ -16,32 +16,53 @@ const OptimizeVideo = () => {
     if (location.state) {
       const { results = {}, selectedFeatures, localVideoPath, videoURL } = location.state;
       console.log("Received Results:", results);
-      console.log("Local Video Path:", localVideoPath);
       console.log("Selected Features:", selectedFeatures);
-      console.log("Video URL:", videoURL);
 
-      // Check for audio or video enhancements
+      // First, check if we have an S3 upload result
+      if (results.s3_upload && results.s3_upload.status === "success") {
+        setVideoPath(results.s3_upload.url);
+        
+        // Determine enhancement type based on which features were applied
+        if (results.audio_processing && results.audio_processing.status === "success") {
+          setEnhancementType("Audio Enhanced (S3)");
+        } else if (results.video_upscaling && results.video_upscaling.status === "success") {
+          setEnhancementType("Video Enhanced (S3)");
+        } else {
+          setEnhancementType("Original Video (S3)");
+        }
+        
+        setMessage("Video processing and upload completed successfully!");
+        return;
+      }
+
+      // If no S3 URL, fall back to local paths
       const audioEnhancedPath = results.audio_processing?.processed_file_path;
       const videoEnhancedPath = results.video_upscaling?.processed_file_path;
 
       let selectedPath = "";
       if (audioEnhancedPath) {
         selectedPath = audioEnhancedPath;
-        setEnhancementType("Audio Enhanced");
+        setEnhancementType("Audio Enhanced (Local)");
       } else if (videoEnhancedPath) {
         selectedPath = videoEnhancedPath;
-        setEnhancementType("Video Enhanced");
+        setEnhancementType("Video Enhanced (Local)");
       } else {
         selectedPath = localVideoPath;
-        setEnhancementType("Original Video");
+        setEnhancementType("Original Video (Local)");
       }
 
       if (selectedPath) {
-        const filename = selectedPath.split("\\").pop();
-        if (filename) {
-          setVideoPath(`http://127.0.0.1:8000/media/processed/${filename}`);
-          setMessage("Video processing completed successfully!");
+        // Check if it's already a URL
+        if (selectedPath.startsWith('http')) {
+          setVideoPath(selectedPath);
+        } else {
+          // Extract filename from path and create local URL
+          const filename = selectedPath.split("\\").pop();
+          if (filename) {
+            setVideoPath(`http://127.0.0.1:8000/media/processed/${filename}`);
+          }
         }
+        setMessage("Video processing completed successfully!");
       } else {
         setMessage("No processed video available.");
       }

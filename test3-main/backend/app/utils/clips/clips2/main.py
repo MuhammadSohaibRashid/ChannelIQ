@@ -21,7 +21,7 @@ def process_video(url, clip_length, clip_count, media_root):
     
     Args:
         url (str): YouTube video URL
-        clip_length (int): Length of each clip in seconds
+        clip_length (int, str): Length of each clip in seconds or "auto"
         clip_count (int): Number of clips to generate
         media_root (str): Path to media directory
     
@@ -31,8 +31,15 @@ def process_video(url, clip_length, clip_count, media_root):
     # Ensure media directory exists
     os.makedirs(media_root, exist_ok=True)
 
+    # Ensure clip_count is an integer
+    try:
+        clip_count = int(clip_count)
+    except (ValueError, TypeError):
+        print(f"Invalid clip_count: {clip_count}, using default of 3")
+        clip_count = 3
+
     # Download video
-    Vid = download_youtube_video(url,media_root)
+    Vid = download_youtube_video(url, media_root)
 
     if Vid:
         Vid = Vid.replace(".webm", ".mp4")
@@ -49,9 +56,9 @@ def process_video(url, clip_length, clip_count, media_root):
                 for text, start, end in transcriptions:
                     TransText += (f"{start} - {end}: {text}\n")
 
-                # Get highlights
+                # Get highlights - pass clip_length as is (string or number)
                 highlights = GetHighlight(TransText, clip_count, clip_length)
-                if highlights and len(highlights) >= clip_count:
+                if highlights and len(highlights) > 0:
                     final_videos = []
 
                     # Process each highlight
@@ -64,7 +71,7 @@ def process_video(url, clip_length, clip_count, media_root):
                         cropped_output = os.path.join(Temp, f"cropped_clip_{idx + 1}.mp4")
                         # Process video segments
                         crop_video(Vid, cropped_output, start, stop)
-                        combined_output=resize_video(cropped_output)
+                        combined_output = resize_video(cropped_output)
                         final_videos.append({
                             "clip_path": combined_output
                         })

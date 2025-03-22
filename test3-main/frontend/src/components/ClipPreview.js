@@ -9,28 +9,41 @@ function ClipPreview() {
     const navigate = useNavigate();
     const { clipPaths = [], videoURL = null } = location.state || {};
     const [error, setError] = useState(null);
-    const [processedClipPaths, setProcessedClipPaths] = useState([]);
+    const [processedClips, setProcessedClips] = useState([]);
     const [selectedClip, setSelectedClip] = useState(null);
     const [selectedFeatures, setSelectedFeatures] = useState([]);
     const [loading, setLoading] = useState(false);
 
     useEffect(() => {
-        console.log("Received clipPaths:", clipPaths);
+        console.log("Received clips:", clipPaths);
     
         if (!clipPaths || clipPaths.length === 0) {
             setError("No clips found to display.");
         } else {
-            const extractedPaths = clipPaths.map(clipPath => 
-                `http://127.0.0.1:8000/media/${clipPath}`
-            );
+            // Handle the new S3 format
+            const clips = clipPaths.map(clip => {
+                // Check if the clip is an object with url and key properties (S3 format)
+                if (typeof clip === 'object' && clip.url) {
+                    return {
+                        url: clip.url,
+                        key: clip.key
+                    };
+                } else {
+                    // Fallback for older format (local path)
+                    return {
+                        url: `http://127.0.0.1:8000/media/${clip}`,
+                        key: clip
+                    };
+                }
+            });
     
-            console.log("Extracted clipPaths:", extractedPaths);
-            setProcessedClipPaths(extractedPaths);
+            console.log("Processed clips:", clips);
+            setProcessedClips(clips);
         }
     }, [clipPaths]);
 
-    const handleClipSelection = (clipPath) => {
-        setSelectedClip(selectedClip === clipPath ? null : clipPath);
+    const handleClipSelection = (clip) => {
+        setSelectedClip(selectedClip === clip ? null : clip);
     };
 
     const handleFeatureToggle = (feature) => {
@@ -65,7 +78,8 @@ function ClipPreview() {
                     "Content-Type": "application/json",
                 },
                 body: JSON.stringify({
-                    clipPaths: [selectedClip],
+                    clipPath: selectedClip.url,
+                    clipKey: selectedClip.key,
                     selectedFeatures: selectedFeatures,
                 }),
             });
@@ -131,10 +145,10 @@ function ClipPreview() {
                             {error ? (
                                 <p className="error-message">{error}</p>
                             ) : (
-                                processedClipPaths.map((clipPath, index) => (
+                                processedClips.map((clip, index) => (
                                     <div key={index} className="clip-container">
                                         <video
-                                            src={clipPath}
+                                            src={clip.url}
                                             controls
                                             className="clip-thumbnail"
                                         />
@@ -142,8 +156,8 @@ function ClipPreview() {
                                             <input
                                                 type="radio"
                                                 name="clipSelection"
-                                                onChange={() => handleClipSelection(clipPath)}
-                                                checked={selectedClip === clipPath}
+                                                onChange={() => handleClipSelection(clip)}
+                                                checked={selectedClip && selectedClip.url === clip.url}
                                             />
                                             Select Clip {index + 1}
                                         </label>

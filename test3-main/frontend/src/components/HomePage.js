@@ -17,6 +17,7 @@ const HomePage = () => {
   // Add animation when component mounts
   useEffect(() => {
     const elements = [titleRef, subtitleRef, previewRef, buttonRef];
+    console.log(localStorage.getItem("user")); 
     
     elements.forEach((ref, index) => {
       if (ref.current) {

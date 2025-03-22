@@ -133,7 +133,7 @@ REST_FRAMEWORK = {
         'rest_framework.authentication.BasicAuthentication',
     ],
 }
-
+FRONTEND_URL = 'http://localhost:3000'
 # CORS configuration
 CORS_ORIGIN_ALLOW_ALL = False  # Set to True only in development
 CORS_ALLOWED_ORIGINS = os.getenv('CORS_ALLOWED_ORIGINS', 'http://localhost:3000').split(',')

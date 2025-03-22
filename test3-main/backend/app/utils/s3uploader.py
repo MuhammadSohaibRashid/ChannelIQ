@@ -67,11 +67,11 @@ class S3Uploader:
     def upload_file(self, local_file_path, s3_key, make_public=False):
         """
         Upload a file to S3.
-        
+
         Args:
             local_file_path: Path to the file on local storage
             s3_key: The key (path) where the file will be stored in S3
-            make_public: Whether to make the file publicly accessible
+            make_public: (Not used, bucket policy handles access)
             
         Returns:
             dict: Result containing success status and file URL if successful
@@ -81,18 +81,14 @@ class S3Uploader:
                 "success": False,
                 "error": f"Local file not found: {local_file_path}"
             }
-        
+
         try:
-            extra_args = {}
-            if make_public:
-                extra_args['ACL'] = 'public-read'
-            
+            # Do not pass ACLs — bucket policy handles permissions
             logger.debug(f"Uploading file to S3 bucket: {self.bucket_name}, key: {s3_key}")
             self.s3_client.upload_file(
                 local_file_path, 
                 self.bucket_name, 
-                s3_key,
-                ExtraArgs=extra_args
+                s3_key
             )
             
             return {
@@ -100,7 +96,7 @@ class S3Uploader:
                 "url": self.get_s3_url(s3_key),
                 "key": s3_key
             }
-            
+
         except ClientError as e:
             logger.error(f"S3 upload failed: {str(e)}")
             return {
@@ -113,6 +109,7 @@ class S3Uploader:
                 "success": False,
                 "error": f"Unexpected error: {str(e)}"
             }
+
     
     def get_user_video_key(self, user_id, video_id, extension="mp4"):
         """

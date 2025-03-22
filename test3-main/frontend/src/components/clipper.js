@@ -143,7 +143,8 @@ function Clipper() {
                     {
                         videoURL,            // Pass the video URL
                         selectedFeatures,
-                        localVideoPath// Include selected features
+                        localVideoPath,
+                        userId: user?.id || user?.sub || null// Include selected features
                     },
                     {
                         headers: {
@@ -180,19 +181,20 @@ function Clipper() {
             setProcessing(true);
             try {
                 console.log("Running video optimization...");
-                console.log("Local Video Path:", localVideoPath)
+                console.log("Local Video Path:", localVideoPath);
                 const payload = {
                     videoURL,
                     optimizationType,
                     aspectRatio,
                     selectedFeatures,
                     localVideoPath,
+                    userId: user?.id || user?.sub || null
                 };
                 const csrfToken = document.cookie
                     .split("; ")
                     .find((row) => row.startsWith("csrftoken"))
                     ?.split("=")[1];
-
+        
                 const response = await axios.post(
                     "http://127.0.0.1:8000/api/seo/",
                     payload,
@@ -203,9 +205,10 @@ function Clipper() {
                         },
                     }
                 );
-
+        
                 alert(response.data.message || "Video optimization started!");
-                console.log("Response Data:", response.data)
+                console.log("Response Data:", response.data);
+                
                 // Navigate to the Optimize Video page and pass the URL and selected features
                 navigate("/optimizevideo", {
                     state: {
@@ -230,20 +233,21 @@ function Clipper() {
                 videoURL,
                 optimizationType,
                 aspectRatio,
-                clipLength, // Keep clipLength separate
+                clipLength,
                 clipCount,
-                features: selectedFeatures, // Include selected features in the payload
+                features: selectedFeatures,
+                userId: user?.id || user?.sub || null
             };
-
+        
             setProcessing(true);
-
+        
             try {
                 console.log("Payload:", payload);
                 const csrfToken = document.cookie
                     .split("; ")
                     .find((row) => row.startsWith("csrftoken"))
                     ?.split("=")[1];
-
+        
                 const response = await axios.post(
                     "http://127.0.0.1:8000/api/process_short_form_video/",
                     payload,
@@ -254,13 +258,13 @@ function Clipper() {
                         },
                     }
                 );
-                console.log(response)
-
+                console.log(response);
+        
                 alert(response.data.message || "Video generation started!");
-                // Navigate to ClipPreview and pass the clip paths
+                // Navigate to ClipPreview and pass the clip paths (now S3 URLs)
                 navigate("/clippreview", {
                     state: {
-                        clipPaths: response.data.clips,
+                        clipPaths: response.data.clips, // This now contains S3 URL objects
                         videoURL,
                     },
                 });
@@ -386,6 +390,7 @@ function Clipper() {
                                 <option value="30">30</option>
                                 <option value="60">60</option>
                                 <option value="90">90</option>
+                                <option value="Auto">Auto</option>
                             </select>
                         </div>
                         <div className="clip-count-container">

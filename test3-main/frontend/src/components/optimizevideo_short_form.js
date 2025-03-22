@@ -11,60 +11,99 @@ const Optimizevideo_shortform = () => {
   const [message, setMessage] = useState("");
   const [enhancementType, setEnhancementType] = useState("");
   const [isCaptionAdded, setIsCaptionAdded] = useState(false); // New state for captions
+  const [originalClip, setOriginalClip] = useState(null);
 
   useEffect(() => {
     if (location.state) {
       const { results = {}, selectedFeatures, selectedClip } = location.state;
       console.log("Received Results:", results);
+      setOriginalClip(selectedClip);
 
-      // Extract paths for audio, video, and captions
-      const audioEnhancedPath = results.audio_processing?.processed_file_path;
-      const videoEnhancedPath = results.video_upscaling?.processed_file_path;
-      const captionedVideoPath = results.captions?.processed_file_path; // Captioned video path
+      // Check if we have the final processed S3 URL
+      if (results.final_processed && results.final_processed.s3_url) {
+        setVideoPath(results.final_processed.s3_url);
+        
+        // Determine enhancement types based on selected features
+        let enhancementLabel = "";
+        
+        if (selectedFeatures.includes("Video Quality")) {
+          enhancementLabel = "Video Enhanced";
+        }
+        
+        if (selectedFeatures.includes("Noise Reduction")) {
+          enhancementLabel = enhancementLabel ? "Audio & Video Enhanced" : "Audio Enhanced";
+        }
+        
+        if (selectedFeatures.includes("Captions")) {
+          setIsCaptionAdded(true);
+          enhancementLabel = enhancementLabel ? `${enhancementLabel}, Captions Added` : "Captions Added";
+        }
+        
+        setEnhancementType(enhancementLabel);
+        setMessage("Video processing completed successfully!");
+      } else {
+        // Fallback to individual processes if final isn't available
+        const audioEnhancedPath = results.audio_processing?.processed_file_path;
+        const videoEnhancedPath = results.video_upscaling?.processed_file_path;
+        const captionedVideoPath = results.captions?.processed_file_path;
 
-      let selectedPath = "";
-      let enhancementType = "";
+        // Check for S3 URLs in individual processes
+        const audioS3Url = results.audio_processing?.s3_url;
+        const videoS3Url = results.video_upscaling?.s3_url;
+        const captionsS3Url = results.captions?.s3_url;
 
-      // Determine which path to use based on processing order
-      if (captionedVideoPath) {
-        selectedPath = captionedVideoPath;
-        enhancementType = "Captions Added";
-        setIsCaptionAdded(true);
-      } else if (audioEnhancedPath) {
-        selectedPath = audioEnhancedPath;
-        enhancementType = "Audio Enhanced";
-      } else if (videoEnhancedPath) {
-        selectedPath = videoEnhancedPath;
-        enhancementType = "Video Enhanced";
-      }
+        let selectedPath = "";
+        let enhancementType = "";
 
-      // Set the video path and enhancement type
-      if (selectedPath) {
-        const filename = selectedPath.split("\\").pop();
-        if (filename) {
-          setVideoPath(`http://127.0.0.1:8000/media/processed/${filename}`);
+        // Prioritize S3 URLs if available
+        if (captionsS3Url) {
+          selectedPath = captionsS3Url;
+          enhancementType = "Captions Added";
+          setIsCaptionAdded(true);
+        } else if (audioS3Url) {
+          selectedPath = audioS3Url;
+          enhancementType = "Audio Enhanced";
+        } else if (videoS3Url) {
+          selectedPath = videoS3Url;
+          enhancementType = "Video Enhanced";
+        } 
+        // Fallback to local paths if no S3 URLs
+        else if (captionedVideoPath) {
+          const filename = captionedVideoPath.split(/[\\/]/).pop();
+          selectedPath = `http://127.0.0.1:8000/media/processed/${filename}`;
+          enhancementType = "Captions Added";
+          setIsCaptionAdded(true);
+        } else if (audioEnhancedPath) {
+          const filename = audioEnhancedPath.split(/[\\/]/).pop();
+          selectedPath = `http://127.0.0.1:8000/media/processed/${filename}`;
+          enhancementType = "Audio Enhanced";
+        } else if (videoEnhancedPath) {
+          const filename = videoEnhancedPath.split(/[\\/]/).pop();
+          selectedPath = `http://127.0.0.1:8000/media/processed/${filename}`;
+          enhancementType = "Video Enhanced";
+        }
+
+        if (selectedPath) {
+          setVideoPath(selectedPath);
           setMessage("Video processing completed successfully!");
           setEnhancementType(enhancementType);
+        } else {
+          setMessage("No processed video available.");
         }
-      } else {
-        setMessage("No processed video available.");
       }
     }
   }, [location.state]);
 
   const handleCompare = () => {
-    const { results, selectedFeatures, selectedClip } = location.state;
-
-    // Extract filename from the URL path
-    const originalFilename = selectedClip.split("/").pop();
+    const { results, selectedFeatures } = location.state;
 
     navigate("/comparison", {
       state: {
         results: results,
         selectedFeatures,
-        videoURL: null,
-        localVideoPath: `\\media\\videos\\${originalFilename}`,
-        seoData: null,
+        originalClip: originalClip,
+        processedVideo: videoPath,
+        seoData: results.seo || null,
       },
     });
   };
@@ -104,7 +143,7 @@ const Optimizevideo_shortform = () => {
 
         <div className="enhancement-info">
           <span className="enhancement-badge">{enhancementType}</span>
-          {isCaptionAdded && ( // Display captions badge if captions were added
+          {isCaptionAdded && !enhancementType.includes("Captions") && (
             <span className="enhancement-badge captions-badge">Captions</span>
           )}
         </div>
