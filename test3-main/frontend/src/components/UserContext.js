@@ -1,37 +1,47 @@
 import React, { createContext, useState, useEffect } from "react";
 
+
 // Create User Context
 export const UserContext = createContext();
 
 // User Provider Component
 export const UserProvider = ({ children }) => {
-  const [user, setUser] = useState(undefined);
+  const [user, setUser] = useState(undefined);  // `undefined` to show loading state
 
   // Load user from localStorage when the app loads
   useEffect(() => {
     const storedUser = localStorage.getItem("user");
-    const token = localStorage.getItem("token");
+    const storedToken = localStorage.getItem("token");
   
-    if (storedUser && token) {
+    if (storedUser && storedToken) {
       setUser(JSON.parse(storedUser));
     } else {
       setUser(null);
     }
   }, []);
   
+  // ✅ Login function to set user & store token
+  const login = (userData) => {
+    if (!userData || !userData.token) {
+        console.error("❌ Error: Missing userData or token in login function");
+        return;
+    }
 
-  // Login function to set user
-  const login = (userData, token) => {
-    setUser(userData);
-    localStorage.setItem("user", JSON.stringify(userData));
-    localStorage.setItem("token", token); // ✅ Save token
-  };
+    const formattedUser = {
+        ...userData,
+        uid: userData.uid || userData.firebase_uid || userData.id || null,  // ✅ Ensure `uid` is always set
+    };
 
-  // Logout function to clear session
+    setUser(formattedUser);
+    localStorage.setItem("user", JSON.stringify(formattedUser));
+    localStorage.setItem("token", userData.token);
+};
+
+  // ✅ Logout function to clear session
   const logout = () => {
     setUser(null);
     localStorage.removeItem("user");
-    localStorage.removeItem("token");
+    localStorage.removeItem("token");  // ✅ Clear token on logout
   };
 
   return (
@@ -39,4 +49,8 @@ export const UserProvider = ({ children }) => {
       {user === undefined ? null : children} {/* 🚀 Wait for user state to load */}
     </UserContext.Provider>
   );
+
+
+
+ 
 };

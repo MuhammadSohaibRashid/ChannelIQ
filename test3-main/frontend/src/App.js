@@ -4,6 +4,7 @@ import { BrowserRouter, Routes, Route, Navigate } from 'react-router-dom';
 import HomePage from './components/HomePage';
 import Clipper from './components/clipper';
 import SEO from './components/Seo';
+import { clientId } from './Firebase';
 import ClipPreview from './components/ClipPreview';
 import OptimizeVideo from './components/optimizevideo';
 import Optimizevideo_shortform from './components/optimizevideo_short_form';
@@ -28,7 +29,7 @@ const App = () => {
   
   return (
     <UserProvider> {/* ✅ User Context wraps everything */}
-      <GoogleOAuthProvider clientId="245617066426-dtg7nbtpqfli3g590423l3me0n00rvni.apps.googleusercontent.com">
+      <GoogleOAuthProvider clientId={clientId}>  
         <BrowserRouter>
           <Routes>
             {/* ✅ Show Login First */}

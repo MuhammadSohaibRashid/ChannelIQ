@@ -55,7 +55,7 @@ def process_video(url, clip_length, clip_count, media_root):
                 # Combine transcription text for processing
                 for text, start, end in transcriptions:
                     TransText += (f"{start} - {end}: {text}\n")
-
+                print(TransText)
                 # Get highlights - pass clip_length as is (string or number)
                 highlights = GetHighlight(TransText, clip_count, clip_length)
                 if highlights and len(highlights) > 0:

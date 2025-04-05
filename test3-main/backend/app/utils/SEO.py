@@ -303,14 +303,7 @@ class EnhancedYouTubeSEOGenerator:
             print(f"Error fetching competitor videos: {str(e)}")
             return []
 
-    def analyze_trending_keywords(self, topic: str) -> List[str]:
-        """Get trending keywords related to the topic from Google Trends."""
-        try:
-            # This would ideally use pytrends, but for illustration we'll use a simpler approach
-            # This is a placeholder - would be implemented with proper API access
-            return []
-        except Exception:
-            return []
+    
 
     def analyze_comments(self, video_id: str) -> List[str]:
         """Analyze top comments to extract user engagement and sentiment."""
@@ -389,209 +382,7 @@ class EnhancedYouTubeSEOGenerator:
             minutes, seconds = divmod(remainder, 60)
             return f"{int(hours):01d}:{int(minutes):02d}:{int(seconds):02d}"
 
-    def generate_chapters(self, 
-                     transcript_data: Dict[str, Any], 
-                     video_length_seconds: float,
-                     num_chapters: int = 8) -> List[Dict[str, Any]]:
-        """Generate optimal chapter markers based on transcript segments."""
-        segments = transcript_data["segments"]
-        
-        # Check if segments is empty and handle appropriately
-        if not segments:
-            # Return basic chapter structure if no segments
-            return [{"time": "00:00", "seconds": 0, "segment_index": 0}]
-        
-        if len(segments) < num_chapters:
-            # Not enough segments for meaningful chapters
-            num_chapters = max(3, len(segments) // 2)
-        
-        # Option 1: Equal time distribution
-        chapter_length = video_length_seconds / num_chapters
-        chapter_times = [i * chapter_length for i in range(num_chapters)]
-        chapter_times.append(video_length_seconds)  # Add end marker
-        
-        # Find segments closest to desired chapter times
-        chapters = []
-        for i in range(num_chapters):
-            target_time = chapter_times[i]
-            
-            # Find segment closest to target time
-            # Add check to ensure segments is not empty
-            if segments:
-                closest_segment = min(segments, key=lambda x: abs(x["start"] - target_time))
-                
-                # Don't use the very first segment for chapter 1 (that's always "introduction")
-                if i == 0:
-                    chapters.append({
-                        "time": self._format_timestamp(0),
-                        "seconds": 0,
-                        "segment_index": 0
-                    })
-                else:
-                    chapters.append({
-                        "time": self._format_timestamp(closest_segment["start"]),
-                        "seconds": closest_segment["start"],
-                        "segment_index": segments.index(closest_segment)
-                    })
-            else:
-                # Fallback if segments is somehow empty
-                chapters.append({
-                    "time": self._format_timestamp(target_time),
-                    "seconds": target_time,
-                    "segment_index": 0
-                })
-        
-        return chapters
-
-    def generate_chapter_titles(self, 
-                          transcript_data: Dict[str, Any],
-                          chapters: List[Dict[str, Any]],
-                          video_title: str) -> List[Dict[str, Any]]:
-        """Generate descriptive chapter titles based on content."""
-        try:
-            client = openai.OpenAI(api_key=self.openai_api_key)
-            
-            segments = transcript_data["segments"]
-            if not segments:
-                # Return basic titles if no segments
-                return [{"time": ch["time"], "title": "Introduction" if i == 0 else f"Key Point {i}", "seconds": ch["seconds"]} 
-                        for i, ch in enumerate(chapters)]
-                        
-            chapter_contexts = []
-            
-            # Prepare context segments for each chapter
-            for i, chapter in enumerate(chapters):
-                start_idx = chapter.get("segment_index", 0)
-                
-                # Determine end index (next chapter or end of video)
-                if i < len(chapters) - 1 and i + 1 < len(chapters) and "segment_index" in chapters[i+1]:
-                    end_idx = chapters[i+1]["segment_index"]
-                else:
-                    end_idx = len(segments) - 1
-                
-                # Ensure indices are valid
-                start_idx = max(0, min(start_idx, len(segments) - 1))
-                end_idx = max(0, min(end_idx, len(segments) - 1))
-                
-                # Get segment text for context
-                # Take a sample of segments (not just first 5)
-                sample_size = min(5, max(1, end_idx - start_idx + 1))
-                
-                # Get evenly distributed sample if segment range is large
-                if end_idx - start_idx + 1 > sample_size:
-                    sample_indices = np.linspace(start_idx, end_idx, sample_size, dtype=int)
-                    context_segments = [segments[idx] for idx in sample_indices]
-                else:
-                    context_segments = segments[start_idx:end_idx+1]
-                    
-                context_text = " ".join([seg["text"] for seg in context_segments])
-                
-                # Format for prompt
-                chapter_contexts.append({
-                    "timestamp": chapter["time"],
-                    "context": context_text[:500]  # Limit context length 
-                })
-            
-            # Create enhanced prompt with more detailed instructions
-            prompt = f"""
-    Create descriptive and engaging chapter titles for a video with the following timestamps.
-    The video title is: "{video_title}"
-
-    Guidelines:
-    - Create SPECIFIC and DESCRIPTIVE titles (3-6 words) that clearly tell viewers what each section covers
-    - Use active, engaging language that creates interest
-    - AVOID generic titles like "Introduction" (except for 00:00), "Conclusion", or just "Chapter X"
-    - Each title should communicate a clear benefit or topic
-    - Make titles helpful for navigation and skimming
-
-    Here are the timestamps with context from each section:
-
-    {json.dumps(chapter_contexts, indent=2)}
-
-    Return ONLY a JSON array with objects containing:
-    - time: the timestamp string
-    - title: your descriptive title (3-6 words)
-
-    Example format:
-    [
-    {{"time": "00:00", "title": "The Hidden Cost of Bad Habits"}},
-    {{"time": "03:45", "title": "Reward-Based Learning Cycle"}},
-    ...
-    ]
-    """
-
-            # Use more capable model with better instructions
-            completion = client.chat.completions.create(
-                model="gpt-4o-mini",  # Use more capable model for better titles
-                messages=[
-                    {"role": "system", "content": "You are an expert YouTube content creator who specializes in creating highly descriptive, specific chapter titles that perfectly summarize video sections."},
-                    {"role": "user", "content": prompt}
-                ],
-                response_format={"type": "json_object"},
-                temperature=0.7  # Slightly higher creativity
-            )
-            
-            response_content = completion.choices[0].message.content
-            try:
-                chapter_data = json.loads(response_content)
-                
-                # Make sure we got an array (handle different response formats)
-                if isinstance(chapter_data, dict) and "chapters" in chapter_data:
-                    chapter_data = chapter_data["chapters"]
-                elif isinstance(chapter_data, dict):
-                    # Convert dictionary to list if needed
-                    chapter_data = [{"time": k, "title": v} for k, v in chapter_data.items()]
-                    
-                # Merge chapter titles with existing chapter data
-                result_chapters = []
-                for i, chapter in enumerate(chapters):
-                    if i < len(chapter_data):
-                        matched_chapter = next((ch for ch in chapter_data if ch["time"] == chapter["time"]), None)
-                        if matched_chapter:
-                            title = matched_chapter["title"]
-                        else:
-                            title = chapter_data[i]["title"]
-                    else:
-                        # Fallback with meaningful titles instead of just "Chapter X"
-                        if i == 0:
-                            title = "Introduction & Overview"
-                        elif i == len(chapters) - 1:
-                            title = "Key Takeaways & Conclusion"
-                        else:
-                            title = f"Key Concept {i}"
-                    
-                    result_chapters.append({
-                        "time": chapter["time"],
-                        "title": title,
-                        "seconds": chapter["seconds"]
-                    })
-                    
-                return result_chapters
-                
-            except (json.JSONDecodeError, KeyError, TypeError, IndexError) as json_err:
-                print(f"Error parsing chapter titles JSON: {str(json_err)}")
-                print(f"Raw response: {response_content}")
-                # Fall through to fallback below
-                
-        except Exception as e:
-            print(f"Error generating chapter titles: {str(e)}")
-            
-        # Fallback to more descriptive generic titles rather than just "Chapter X"
-        fallback_titles = [
-            "Introduction & Overview",
-            "Problem Definition",
-            "Key Concept Explained", 
-            "Practical Application",
-            "Research Findings",
-            "Expert Insights",
-            "Case Study Example",
-            "Summary & Takeaways"
-        ]
-        
-        return [{"time": ch["time"], 
-             "title": fallback_titles[i] if i < len(fallback_titles) else f"Key Point {i+1}", 
-             "seconds": ch["seconds"]} 
-            for i, ch in enumerate(chapters)]
+    
 
     def format_chapters_for_description(self, chapters: List[Dict[str, Any]]) -> str:
         """Format chapters for YouTube description."""
@@ -703,21 +494,14 @@ class EnhancedYouTubeSEOGenerator:
     * Competitor-targeting tags
 
     4. KEYWORD ANALYSIS:
-    - Primary keyword (most important target)
-    - Secondary keywords (5-7 supporting terms)
-    - Long-tail variations (3-5 specific phrases)
-    - Trending keywords related to topic
+    - Identify 5-7 primary keywords to target
 
     Format your response as JSON with the following structure:
     {{
         "title": "Optimized title for search and CTR",
         "description": "Full optimized description with proper line breaks, timestamps, and CTAs",
         "tags": ["tag1", "tag2", ... "tag20"],
-        "keywords": {{
-            "primary": "main keyword",
-            "secondary": ["keyword1", "keyword2", ... "keyword7"],
-            "long_tail": ["long tail phrase 1", "long tail phrase 2", ... "long tail phrase 5"]
-        }}
+        "keywords": ["keyword1", "keyword2", ...]
     }}
 
     IMPORTANT: For the description field, use literal newline characters (\\n) where line breaks should appear.
@@ -801,49 +585,105 @@ class EnhancedYouTubeSEOGenerator:
         except Exception as e:
             raise ValidationError(f"Error processing video: {str(e)}")
             
-    def process_video_shortform(self, file_path: str) -> Dict[str, Any]:
-        """Enhanced method to process a video file and generate SEO content for short-form videos."""
+    def process_video_shortform_enhanced(self, 
+                                  file_path: str, 
+                                  original_video_details: Dict[str, Any] = None,
+                                  original_transcript: Dict[str, Any] = None,
+                                  competitor_videos: List[Dict[str, Any]] = None,
+                                  comments: List[str] = None) -> Dict[str, Any]:
+        """
+        Enhanced method to process a short-form video with context from the original video.
+        
+        Args:
+            file_path: Path to the shortform video file
+            original_video_details: Details of the original video (if available)
+            original_transcript: Transcript of the original video (if available)
+            competitor_videos: List of competitor videos (if available)
+            comments: List of comments from the original video (if available)
+            
+        Returns:
+            Dict with optimized SEO content
+        """
         try:
             # Validate file
             self.validate_file(file_path)
             
-            # Get transcript
-            transcript_data = self.transcribe_video(file_path)
+            # Get transcript for the shortform video
+            shortform_transcript = self.transcribe_video(file_path)
+            print("Transcript: ",shortform_transcript)
+            # Extract additional context from original video data if available
+            video_title = original_video_details.get('title', '') if original_video_details else ''
+            video_description = original_video_details.get('description', '') if original_video_details else ''
+            original_tags = original_video_details.get('tags', []) if original_video_details else []
             
-            # Process with special considerations for short-form content
-            # For short-form, we use a different prompt strategy
+            # Prepare competitor analysis
+            competitor_analysis = ""
+            if competitor_videos:
+                competitor_analysis = "Top competitor videos:"
+                for idx, video in enumerate(competitor_videos[:3], 1):
+                    competitor_analysis += f"{idx}. Title: {video.get('title', 'Unknown')}"
+                    competitor_analysis += f"   Tags: {', '.join(video.get('tags', [])[:10])}"
+                    competitor_analysis += f"   Views: {video.get('view_count', 0)}"
+            
+            # Prepare comment insights
+            comment_insights = ""
+            if comments:
+                sample_comments = comments[:10]
+                comment_insights = "Sample comments:" + "".join(f"- {comment}" for comment in sample_comments)
+            
+            # Get original transcript summary if available
+            original_transcript_text = ""
+            if original_transcript and 'text' in original_transcript:
+                original_transcript_text = original_transcript['text'][:1000] + "..." if len(original_transcript['text']) > 1000 else original_transcript['text']
+            
+            # Process with special considerations for short-form content with enhanced context
             system_prompt = """You are an expert in short-form video SEO optimization for platforms like YouTube Shorts, TikTok, and Instagram Reels. 
-Your goal is to maximize discoverability, engagement, and virality potential."""
+    Your goal is to maximize discoverability, engagement, and virality potential while maintaining content relevance and brand consistency."""
             
             client = openai.OpenAI(api_key=self.openai_api_key)
             
             prompt = f"""
-Analyze this short-form video transcript and create optimized metadata:
+    Analyze this short-form video clip transcript and create optimized metadata that's aligned with the original content:
 
-TRANSCRIPT:
-{transcript_data["text"]}
+    SHORTFORM TRANSCRIPT:
+    {shortform_transcript["text"]}
 
-CREATE:
-1. 1 attention-grabbing title (under 60 chars)
-2. Engaging description with hooks (under 150 chars)
-3. 15-20 trending hashtags in this niche
-4. 5-7 primary keywords to target
+    ORIGINAL VIDEO CONTEXT:
+    Title: {video_title}
+    Description: {video_description[:500]}... (truncated)
+    Tags: {', '.join(original_tags[:15])}
 
-FORMAT RESPONSE AS JSON:
-{{
-    "title", "Engaging title under 60 chars",
-    "description": "Engaging description with hooks",
-    "hashtags": ["#tag1", "#tag2", ...],
-    "keywords": ["keyword1", "keyword2", ...]
-}}
+    {f"ORIGINAL TRANSCRIPT EXCERPT:{original_transcript_text}" if original_transcript_text else ""}
 
-OPTIMIZATION STRATEGY:
-- Focus on trending sounds/topics
-- Use hook-based titles ("Wait for it", "Watch until end")
-- Include emotion-triggering elements
-- Target algorithm-favored terms
-- Optimize for high CTR and completion rate
-"""
+    {competitor_analysis}
+
+    {comment_insights}
+
+    CREATE:
+    1. 1 attention-grabbing title (under 60 chars)
+    2. Engaging description with hooks and clear CTAs (under 150 chars)
+    3. 15-20 trending hashtags in this niche
+    4. 5-7 primary keywords to target
+    5. A brief content strategy note (what works well in this niche)
+
+    FORMAT RESPONSE AS JSON:
+    {{
+        "title", "Engaging title under 60 chars",
+        "description": "Engaging description with hooks",
+        "hashtags": ["#tag1", "#tag2", ...],
+        "keywords": ["keyword1", "keyword2", ...],
+        "content_strategy": "Brief strategy note on content optimization"
+    }}
+
+    OPTIMIZATION STRATEGY:
+    - Ensure consistency with the original video's topic and branding
+    - Focus on trending sounds/topics
+    - Use hook-based titles ("Wait for it", "Watch until end")
+    - Include emotion-triggering elements
+    - Target algorithm-favored terms
+    - Optimize for high CTR and completion rate
+    - Leverage the original video's successful keywords/themes
+    """
 
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",
@@ -860,4 +700,4 @@ OPTIMIZATION STRATEGY:
         except ValidationError as e:
             raise e
         except Exception as e:
-            raise ValidationError(f"Error processing short-form video: {str(e)}")
+            raise ValidationError(f"Error processing short-form video with enhanced context: {str(e)}")

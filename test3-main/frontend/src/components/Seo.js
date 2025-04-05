@@ -5,18 +5,30 @@ import { FontAwesomeIcon } from "@fortawesome/react-fontawesome";
 import { faFileLines, faClosedCaptioning, faSearch, faImage } from "@fortawesome/free-solid-svg-icons";
 import { fetchVideoMetadata } from "../axios-use/api";
 import { UserContext } from "./UserContext"; // Import User Context
+import { db } from "../Firebase";  // Import Firebase Firestore
+import { addDoc, getDoc, doc, setDoc, collection, query, where, serverTimestamp } from "firebase/firestore";
 
 function SEO({ videoThumbnail }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useContext(UserContext); // Access User Context
 
-  const { message, results, videoURL, localVideoPath, selectedFeatures } = location.state || {};
+  const { videoTitle, message, results, videoURL, localVideoPath, selectedFeatures } = location.state || {};
+  
+  // ✅ Debugging Logs
+  console.log("🔍 Debug: location.state =>", location.state);
   console.log(results);
 
+  // ✅ Fix: Ensure `displayMedia` or `selectedClip` is received
+  const displayMedia = location.state?.displayMedia || null; 
+  const selectedClip = location.state?.selectedClip || null; 
+
+  console.log("🔍 Debug: displayMedia (Thumbnail/Clip) =>", displayMedia);
+  console.log("🔍 Debug: selectedClip (if available) =>", selectedClip);
+
   const [seoMessage, setSeoMessage] = useState(message || "No SEO data received.");
-  const [displayVideo, setDisplayVideo] = useState(null);
-  const [thumbnail, setThumbnail] = useState(videoThumbnail || "https://via.placeholder.com/300x300");
+  const [displayVideo, setDisplayVideo] = useState(selectedClip || null);
+  const [thumbnail, setThumbnail] = useState(displayMedia || videoThumbnail || "/default-thumbnail.png");
   const [uploading, setUploading] = useState(false);
   const [authorizing, setAuthorizing] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null);
@@ -28,6 +40,78 @@ function SEO({ videoThumbnail }) {
   const description = seoData.description || "No description available.";
   const title = seoData.title || "No title available.";
   const tags = seoData.tags?.length ? seoData.tags.join(", ") : "No tags available.";
+
+  // ✅ Helper function to format text with line breaks
+  const formatWithLineBreaks = (text) => {
+    if (!text) return "";
+    
+    // Replace all newline characters with <br /> tags
+    return text.split('\n').map((line, index) => (
+      <React.Fragment key={index}>
+        {line}
+        {index < text.split('\n').length - 1 && <br />}
+      </React.Fragment>
+    ));
+  };
+
+  // ✅ Firebase function to save SEO data
+  const saveSEOToDB = async (user, videoTitle, title, description, tags, keywords) => {
+    if (!user) {
+        console.error("❌ User not logged in. Cannot save SEO data.");
+        return;
+    }
+
+    const extractedUserId = user?.uid;
+    if (!extractedUserId) {
+        console.error("❌ No userId found.");
+        return;
+    }
+
+    // ✅ Step 1: Sanitize the video title
+    let sanitizedTitle = videoTitle
+        ? videoTitle.replace(/[^\w\s]/gi, "").trim()
+        : `video_${Date.now()}`;
+
+    if (!sanitizedTitle || sanitizedTitle.trim() === "") {
+        console.error("❌ Error: Sanitized video title is empty.");
+        return;
+    }
+
+    try {
+        // ✅ Step 2: Firestore Path to store in 'LongForm'
+        const longFormRef = doc(db, "users", extractedUserId, "videos", sanitizedTitle, "generate", "LongForm");
+
+        // ✅ Step 3: Ensure `tags` and `keywords` are always arrays before joining
+        const formattedTags = Array.isArray(tags) && tags.length > 0 ? tags.join(", ") : "No tags available.";
+        const formattedKeywords = Array.isArray(keywords) && keywords.length > 0 ? keywords.join(", ") : "No keywords available.";
+
+        // ✅ Step 4: Store all SEO details under a single "seo" field
+        const seoData = {
+            title: title || "Untitled",
+            description: description || "No description available.",
+            tags: formattedTags,
+            keywords: formattedKeywords,
+            timestamp: serverTimestamp(), // Firestore timestamp
+        };
+
+        console.log("📂 Firestore Path:", longFormRef.path);
+        console.log("🔍 Debug: Saving SEO Data:", JSON.stringify(seoData, null, 2));
+
+        // ✅ Step 5: Save SEO Data to Firestore under "seo" field
+        await setDoc(longFormRef, { seo: seoData }, { merge: true });
+
+        console.log("✅ SEO details successfully saved inside LongForm subcollection.");
+    } catch (error) {
+        console.error("🔥 Error saving SEO data:", error);
+    }
+  };
+
+  // ✅ Automatically Save SEO Data when Component Loads
+  useEffect(() => {
+    if (user && videoTitle && title && description && (Array.isArray(seoData.tags) || tags)) {
+      saveSEOToDB(user, videoTitle, title, description, seoData.tags || tags, seoData.keywords || keywords);
+    }
+  }, [user, videoTitle, title, description, tags, keywords, seoData.tags, seoData.keywords]);
 
   // Check for YouTube authorization on component mount
   useEffect(() => {
@@ -309,6 +393,12 @@ function SEO({ videoThumbnail }) {
           success: true,
           message: "Video SEO updated successfully!"
         });
+        
+        // ✅ After successful YouTube update, also save to Firebase
+        if (videoTitle) {
+          await saveSEOToDB(user, videoTitle, seoData.title || title, seoData.description || description, 
+                           seoData.tags || tags, seoData.keywords || keywords);
+        }
       } else {
         setUploadStatus({
           success: false,
@@ -375,7 +465,9 @@ function SEO({ videoThumbnail }) {
               </div>
               <div className="seo-box">
                 <h2>Description</h2>
-                <p>{description}</p>
+                <div className="description-text">
+                  {formatWithLineBreaks(description)}
+                </div>
               </div>
               <div className="seo-box">
                 <h2>Title</h2>

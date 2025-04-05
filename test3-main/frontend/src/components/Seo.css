@@ -397,3 +397,29 @@
 .view-video-link:hover {
   background-color: #3367d6;
 }
+.description-text {
+  white-space: pre-line; /* This preserves line breaks */
+  line-height: 1.5;
+  max-height: 300px;
+  overflow-y: auto; /* Add scrolling if the content is too long */
+  padding-right: 5px;
+}
+
+/* For better scrollbar appearance */
+.description-text::-webkit-scrollbar {
+  width: 6px;
+}
+
+.description-text::-webkit-scrollbar-track {
+  background: rgba(255, 255, 255, 0.1);
+  border-radius: 3px;
+}
+
+.description-text::-webkit-scrollbar-thumb {
+  background: rgba(143, 58, 245, 0.5);
+  border-radius: 3px;
+}
+
+.description-text::-webkit-scrollbar-thumb:hover {
+  background: rgba(143, 58, 245, 0.7);
+}

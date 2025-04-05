@@ -1,7 +1,8 @@
 from pathlib import Path
 import os
 from dotenv import load_dotenv
-
+import firebase_admin
+from firebase_admin import credentials
 # Load environment variables from .env file
 load_dotenv()
 
@@ -190,3 +191,16 @@ AWS_S3_FILE_OVERWRITE = False
 AWS_DEFAULT_ACL = None  # Ensure no default ACL is set
 AWS_S3_VERIFY = True
 DEFAULT_FILE_STORAGE = 'storages.backends.s3boto3.S3Boto3Storage'
+FILE_CHARSET = 'utf-8'
+DEFAULT_CHARSET = 'utf-8'
+FIREBASE_SERVICE_ACCOUNT_KEY_PATH = os.path.join(BASE_DIR, "firebase_credential.json")
+if not firebase_admin._apps:
+    cred = credentials.Certificate(FIREBASE_SERVICE_ACCOUNT_KEY_PATH)
+    firebase_admin.initialize_app(cred)
+# Password validation
+AUTH_PASSWORD_VALIDATORS = [
+    {'NAME': 'django.contrib.auth.password_validation.UserAttributeSimilarityValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.MinimumLengthValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.CommonPasswordValidator'},
+    {'NAME': 'django.contrib.auth.password_validation.NumericPasswordValidator'},
+]

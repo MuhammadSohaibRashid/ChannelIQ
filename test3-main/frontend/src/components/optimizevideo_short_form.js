@@ -2,6 +2,8 @@ import React, { useEffect, useState, useContext } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { UserContext } from "./UserContext"; // Import User Context
 import "./optimizevideo.css";
+import { doc, setDoc, serverTimestamp, getDocs, collection } from "firebase/firestore"; // Firestore imports
+import { db } from "../Firebase"; // Make sure the Firebase config is correctly imported
 
 const Optimizevideo_shortform = () => {
   const location = useLocation();
@@ -15,7 +17,7 @@ const Optimizevideo_shortform = () => {
 
   useEffect(() => {
     if (location.state) {
-      const { results = {}, selectedFeatures, selectedClip } = location.state;
+      const { results = {}, selectedFeatures, selectedClip, videoTitle } = location.state;
       console.log("Received Results:", results);
       setOriginalClip(selectedClip);
 
@@ -41,6 +43,15 @@ const Optimizevideo_shortform = () => {
         
         setEnhancementType(enhancementLabel);
         setMessage("Video processing completed successfully!");
+        
+        // Save to Firebase
+        saveOptimizationDetails({
+          processedVideoURL: results.final_processed.s3_url,
+          originalVideoURL: selectedClip,
+          enhancementType: enhancementLabel,
+          selectedFeatures,
+          videoTitle,
+        });
       } else {
         // Fallback to individual processes if final isn't available
         const audioEnhancedPath = results.audio_processing?.processed_file_path;
@@ -87,12 +98,103 @@ const Optimizevideo_shortform = () => {
           setVideoPath(selectedPath);
           setMessage("Video processing completed successfully!");
           setEnhancementType(enhancementType);
+          
+          // Save to Firebase
+          saveOptimizationDetails({
+            processedVideoURL: selectedPath,
+            originalVideoURL: selectedClip,
+            enhancementType: enhancementType,
+            selectedFeatures,
+            videoTitle,
+          });
         } else {
           setMessage("No processed video available.");
         }
       }
     }
   }, [location.state]);
+
+  // Function to store details in Firestore
+  const saveOptimizationDetails = async ({
+    processedVideoURL,
+    originalVideoURL,
+    enhancementType,
+    selectedFeatures,
+    videoTitle, // Accept videoTitle as a parameter
+  }) => {
+    console.log("🔄 saveOptimizationDetails called");
+
+    if (!user) {
+      console.log("❌ User not logged in. Cannot save video details.");
+      return;
+    }
+
+    try {
+      console.log("🔍 Fetching videos for user:", user.uid);
+      const videosRef = collection(db, "users", user.uid, "videos");
+      const querySnapshot = await getDocs(videosRef);
+
+      // ✅ Apply new title logic
+      let sanitizedTitle = videoTitle
+        ? videoTitle.replace(/[^\w\s]/gi, "").trim()
+        : `video_${Date.now()}`; // Fallback if undefined
+
+      let originalTitle = videoTitle || "Unknown Video";
+
+      console.log("📌 Received Video Title:", videoTitle);
+      console.log("📌 Step 1: Initial Sanitized Title:", sanitizedTitle);
+
+      // Fetch title from Firestore if not available
+      if (!videoTitle) {
+        querySnapshot.forEach((doc) => {
+          const videoData = doc.data();
+          console.log("📌 Video Data from Firestore:", videoData);
+
+          if (videoData.title) {
+            let title = videoData.title.replace(/[^\w\s]/gi, "").trim();
+            console.log("✅ Found and Sanitized Title from Firestore:", title);
+
+            if (!sanitizedTitle) {
+              sanitizedTitle = title;
+              originalTitle = videoData.title;
+              console.log("🟢 Step 2: Updated Sanitized Title:", sanitizedTitle);
+              console.log("🟢 Step 3: Updated Original Title:", originalTitle);
+            }
+          }
+        });
+      }
+
+      // Final fallback if title is still unavailable
+      if (!sanitizedTitle) {
+        console.log("⚠️ No matching video found. Using fallback.");
+        sanitizedTitle = `video_${Date.now()}`;
+        originalTitle = "Unknown Video";
+      }
+
+      console.log("📌 Final Sanitized Video Title:", sanitizedTitle);
+      console.log("✅ Firestore Path:", `users/${user.uid}/videos/${sanitizedTitle}/generate/ShortForm`);
+
+      // Save to Firestore (Ensure the correct document path is used)
+      const clipDocRef = doc(db, `users/${user.uid}/videos/${sanitizedTitle}/generate/ShortForm`);
+
+      await setDoc(
+        clipDocRef,
+        {
+          processedVideoURL,
+          originalVideoURL,
+          enhancementType,
+          selectedFeatures,
+          timestamp: serverTimestamp(),
+          videoTitle: originalTitle, // Save actual video title
+        },
+        { merge: true }
+      );
+
+      console.log("✅ Video details saved successfully in Firestore!");
+    } catch (error) {
+      console.error("🔥 Error saving video details to Firestore:", error);
+    }
+  };
 
   const handleCompare = () => {
     const { results, selectedFeatures } = location.state;

@@ -1,113 +1,109 @@
-import React, { useContext, useEffect, useState } from "react";
-import { GoogleLogin } from "@react-oauth/google";
+import React, { useContext, useEffect } from "react";
 import { useNavigate } from "react-router-dom";
-import { jwtDecode } from "jwt-decode";
-import axios from "axios";
-
-import { UserContext } from "./UserContext";
+import { signInWithPopup, signOut } from "firebase/auth";
+import { auth, provider, db } from "../Firebase";  
+import { arrayUnion, doc, setDoc, updateDoc, serverTimestamp } from "firebase/firestore";
+import { UserContext } from "./UserContext";  // Import User Context
 import "./LoginPage.css";
 import "./base.css";
 
 const LoginPage = () => {
   const navigate = useNavigate();
-  const { user, login, logout } = useContext(UserContext);
-  const [authStatus, setAuthStatus] = useState({
-    google: false,
-    youtube: false,
-  });
+  const { user, login, logout } = useContext(UserContext);  
 
   // Check if user is already logged in & navigate to home
   useEffect(() => {
     if (user) {
       navigate("/home");
-      // Check YouTube authorization status
-      checkYouTubeAuth();
     }
-  }, [user, navigate]);
+  }, [user, navigate]);  
 
-  // Check YouTube auth status when user logs in
-  const checkYouTubeAuth = async () => {
+  const handleGoogleLogin = async () => {
     try {
-      const token = localStorage.getItem('authToken');
-      console.log("Stored Auth Token:", token);
-      const response = await axios.get('http://127.0.0.1:8000/api/youtube/check-auth/', {
-        headers: {
-          Authorization: `Token ${token}`
-        }
-      });
-      
-      setAuthStatus(prev => ({
-        ...prev,
-        youtube: response.data.is_authorized
-      }));
-    } catch (error) {
-      console.error('Error checking YouTube auth:', error);
-      setAuthStatus(prev => ({
-        ...prev,
-        youtube: false
-      }));
-    }
-  };
+        // 🔹 Step 1: Sign in with Firebase
+        const result = await signInWithPopup(auth, provider);
+        const user = result.user;
 
-  // Handle Google Login Success
-  const handleGoogleLoginSuccess = async (response) => {
-    try {
-        const decodedUser = jwtDecode(response.credential); // Decode Google token
-        console.log("Google Login Success:", decodedUser);
-        
-        // Send request directly to Django backend
+        // 🔹 Step 2: Get Firebase ID Token
+        const idToken = await user.getIdToken(true);
+
+        console.log("✅ Firebase Authentication Success:", user);
+        console.log("🔑 Firebase ID Token:", idToken);
+
+        // 🔹 Step 3: Send Firebase Token and User ID to Django Backend
+        console.log("📤 Sending to Django Backend:", {
+            token: idToken,  
+            userId: user.uid   
+        });
+
         const authResponse = await fetch("http://127.0.0.1:8000/api/auth/google-login/", {
             method: "POST",
-            headers: {
-                "Content-Type": "application/json"
-            },
-            body: JSON.stringify({ token: response.credential }) // Send Google token
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ token: idToken, userId: user.uid })
         });
 
-        if (!authResponse.ok) {
-            throw new Error("Google login failed");
-        }
+        if (!authResponse.ok) throw new Error("❌ Google login failed in Django Backend");
 
-        const data = await authResponse.json(); // Parse response JSON
+        const data = await authResponse.json();
+        console.log("✅ Django Backend Response:", data);
 
-        // Store auth token
+        // 🔹 Step 4: Store Django Auth Token
         localStorage.setItem("authToken", data.token);
 
-        // Save user in context & localStorage
-        login({
-            ...decodedUser,
-            token: data.token
+        // 🔹 Step 5: Store User Data in Firebase Firestore
+        const userRef = doc(db, "users", user.uid);
+
+        // ✅ Store basic user details (merged with existing)
+        await setDoc(userRef, {
+            name: user.displayName,
+            email: user.email,
+            profilePicture: user.photoURL,
+            uid: user.uid,
+            lastLogin: serverTimestamp(),  // ✅ Correct usage
+        }, { merge: true });
+
+        console.log("✅ User data saved to Firebase Firestore");
+
+        // 🔹 Step 6: Add login history (Fixed issue with `serverTimestamp()`)
+        const loginTime = new Date();  // ✅ Use normal timestamp, NOT `serverTimestamp()`
+        await updateDoc(userRef, {
+            loginHistory: arrayUnion(loginTime)  // ✅ Use normal timestamp instead of `serverTimestamp()`
         });
 
-        setAuthStatus(prev => ({
-            ...prev,
-            google: true
-        }));
+        console.log("✅ Login timestamp added to history");
 
-        // Check YouTube authorization
-        await checkYouTubeAuth();
+        // 🔹 Step 7: Save User in Context & Local Storage
+        const userData = {
+            name: user.displayName,
+            email: user.email,
+            picture: user.photoURL,
+            uid: user.uid,
+            token: data.token
+        };
 
-        // Redirect to Home Page
+        login(userData);
+        localStorage.setItem("user", JSON.stringify(userData));
+
+        // 🔹 Step 8: Redirect to Home Page
         navigate("/home");
-
     } catch (error) {
-        console.error("Error processing Google login:", error);
+        console.error("❌ Google Login Failed:", error);
     }
 };
 
+  
+  
 
-  // Handle Google Login Failure
-  const handleGoogleLoginFailure = () => {
-    console.log("Google Login Failed");
-  };
-
-  // Handle YouTube Authorization
-  const handleYouTubeAuth = () => {
-    // Store current page so we can return after auth
-    localStorage.setItem('authRedirect', '/home');
-    
-    // Redirect to Django backend auth endpoint
-    window.location.href = '/api/youtube/authorize/';
+  // ✅ Logout function (clears Firebase session)
+  const handleLogout = async () => {
+    try {
+      await signOut(auth); // Sign out from Firebase
+      logout(); // Clear user from context
+      localStorage.removeItem("user"); // Remove from local storage
+      navigate("/login");
+    } catch (error) {
+      console.error("Logout Failed", error);
+    }
   };
 
   return (
@@ -118,8 +114,8 @@ const LoginPage = () => {
           <span className="highlight">IQ</span>
         </h1>
         <nav className="nav">
-          {user && (
-            <button className="sign-out" onClick={logout}>
+          {user && ( 
+            <button className="sign-out" onClick={handleLogout}>
               Logout
             </button>
           )}
@@ -140,7 +136,6 @@ const LoginPage = () => {
             <li>✔ Auto Clipping</li>
             <li>✔ Quality Enhancer</li>
             <li>✔ Sound Improvement</li>
-            <li>✔ YouTube Upload</li>
           </ul>
         </div>
 
@@ -148,50 +143,13 @@ const LoginPage = () => {
           <h2>{user ? `Welcome, ${user.name}` : "Login to your account"}</h2>
 
           {user ? (
-            <div className="auth-status">
-              <div className="auth-item">
-                <span className="auth-label">Google Account:</span>
-                <span className="auth-value connected">Connected</span>
-              </div>
-              
-              <div className="auth-item">
-                <span className="auth-label">YouTube Account:</span>
-                {authStatus.youtube ? (
-                  <span className="auth-value connected">Connected</span>
-                ) : (
-                  <>
-                    <span className="auth-value not-connected">Not Connected</span>
-                    <button 
-                      className="connect-btn youtube-btn" 
-                      onClick={handleYouTubeAuth}
-                    >
-                      Connect YouTube
-                    </button>
-                  </>
-                )}
-              </div>
-              
-              <div className="user-actions">
-                <button className="continue-btn" onClick={() => navigate('/home')}>
-                  Continue to Dashboard
-                </button>
-                <button className="logout-btn" onClick={logout}>
-                  Logout
-                </button>
-              </div>
-            </div>
+            <button className="logout-btn" onClick={handleLogout}>
+              Logout
+            </button>
           ) : (
-            <div className="login-options">
-              <p>Sign in with your Google account to get started:</p>
-              <GoogleLogin
-                onSuccess={handleGoogleLoginSuccess}
-                onError={handleGoogleLoginFailure}
-                text="signin_with"
-                shape="rectangular"
-                theme="filled_blue"
-                size="large"
-              />
-            </div>
+            <button className="login-btn" onClick={handleGoogleLogin}>
+              Sign in with Google
+            </button>
           )}
         </div>
       </div>

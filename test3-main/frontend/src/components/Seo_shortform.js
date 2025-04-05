@@ -1,6 +1,8 @@
 import React, { useState, useContext, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { UserContext } from "./UserContext"; // Import User Context
+import { db } from "../Firebase"; // Import Firestore Database
+import { doc, setDoc, collection, serverTimestamp } from "firebase/firestore";
 import "./Seo_shortform.css";
 
 function Seo_shortform({ videoThumbnail }) {
@@ -15,16 +17,97 @@ function Seo_shortform({ videoThumbnail }) {
   const [authToken, setAuthToken] = useState(null);
   const [hasYoutubeAuth, setHasYoutubeAuth] = useState(false);
 
+  // Extract SEO data for easier access
+  const seoData = results?.seo || {};
+  const keywords = seoData.keywords?.join(", ") || "No keywords available.";
+  const description = seoData.description || "No description available.";
+  const title = seoData.title || "No title available.";
+  const tags = seoData.hashtags?.join(", ") || "No tags available.";
+
+  // Check for videoTitle from previous page
+  const videoTitle = location.state?.videoTitle || null;
+
+  // If no title found from previous page, show an error
+  useEffect(() => {
+    if (!videoTitle) {
+      alert("⚠️ No title found from previous page!");
+    }
+  }, [videoTitle]);
+
+  console.log("🚀 Video Title from Previous Page:", videoTitle || "No title found");
+
   // Check for YouTube authorization on component mount
   useEffect(() => {
     const token = localStorage.getItem("authToken") || sessionStorage.getItem("authToken");
     setAuthToken(token);
-    
+    if (results?.final_processed?.s3_url) {
+      console.log(results.final_processed.s3_url);
+    }
     // Check if user has YouTube authorization
     if (token && user) {
       checkYoutubeAuth(token);
     }
   }, [user]);
+
+  // ✅ Save SEO Short Form Details
+  const saveSEOToDB = async (user, videoTitle, title, description, tags, keywords) => {
+    if (!user) return console.error("❌ User not logged in.");
+    const extractedUserId = user?.uid;
+    if (!extractedUserId) return console.error("❌ No userId found.");
+    if (!videoTitle?.trim()) return console.error("❌ Error: videoTitle is empty.");
+
+    try {
+      const sanitizedTitle = videoTitle.replace(/\s+/g, " ");
+      const clipDocRef = doc(db, `users/${user.uid}/videos/${sanitizedTitle}/generate/ShortForm`);
+      const seoData = {
+        title: title || "Untitled",
+        description: description || "No description available.",
+        tags: tags || [],
+        keywords: keywords || [],
+        timestamp: serverTimestamp(),
+      };
+      await setDoc(clipDocRef, { seo: seoData }, { merge: true });
+      console.log("✅ SEO Short Form details saved.");
+    } catch (error) {
+      console.error("🔥 Error saving SEO data:", error);
+    }
+  };
+
+  // ✅ Save Video Details
+  const saveVideoDetailsToDB = async (user, videoTitle, description, tags, keywords, selectedFeatures) => {
+    if (!user) return console.error("❌ User not logged in.");
+    const extractedUserId = user?.uid;
+    if (!extractedUserId) return console.error("❌ No userId found.");
+    if (!videoTitle?.trim()) return console.error("❌ Error: videoTitle is empty.");
+
+    try {
+      const formattedVideoTitle = videoTitle.replace(/\s+/g, " ");
+      const videoRef = doc(db, "users", extractedUserId, "videos", formattedVideoTitle);
+      const videoData = {
+        videoTitle,
+        description: description || "No description available.",
+        tags: tags || [],
+        keywords: keywords || [],
+        processedVideoURL: getVideoUrl(),
+        originalVideoURL: selectedClip,
+        enhancementType: selectedFeatures.join(", "),
+        timestamp: serverTimestamp(),
+      };
+      await setDoc(videoRef, videoData, { merge: true });
+      console.log("✅ Video details saved.");
+    } catch (error) {
+      console.error("🔥 Error saving video details:", error);
+    }
+  };
+
+  // ✅ Automatically Save Data
+  useEffect(() => {
+    if (videoTitle && videoTitle !== "No title available." && user) {
+      const sanitizedTitle = videoTitle.trim();
+      saveSEOToDB(user, sanitizedTitle, title, description, tags, keywords);
+      saveVideoDetailsToDB(user, sanitizedTitle, description, tags, keywords, selectedFeatures);
+    }
+  }, [videoTitle, title, description, tags, keywords, selectedClip, selectedFeatures, user]);
 
   // Function to check if user has YouTube authorization
   const checkYoutubeAuth = async (token) => {
@@ -52,16 +135,8 @@ function Seo_shortform({ videoThumbnail }) {
     }
 
     // For processed files, use the S3 URL when available in results
-    if (results?.audio_processing?.s3_url) {
-      return results.audio_processing.s3_url;
-    }
-
-    if (results?.video_upscaling?.s3_url) {
-      return results.video_upscaling.s3_url;
-    }
-
-    if (results?.captions?.s3_url) {
-      return results.captions.s3_url;
+    if (results?.final_processed?.s3_url) {
+      return results.final_processed.s3_url;
     }
 
     // Fallback to processed file paths for local development/testing
@@ -317,19 +392,19 @@ function Seo_shortform({ videoThumbnail }) {
             <div className="seo-data">
               <div className="seo-box">
                 <h2>Title</h2>
-                <p>{results?.seo?.title || "No title available."}</p>
+                <p>{title}</p>
               </div>
               <div className="seo-box">
                 <h2>Description</h2>
-                <p>{results?.seo?.description || "No description available."}</p>
+                <p>{description}</p>
               </div>
               <div className="seo-box">
                 <h2>Keywords</h2>
-                <p>{results?.seo?.keywords?.join(", ") || "No keywords available."}</p>
+                <p>{keywords}</p>
               </div>
               <div className="seo-box">
                 <h2>Tags</h2>
-                <p>{results?.seo?.hashtags?.join(", ") || "No tags available."}</p>
+                <p>{tags}</p>
               </div>
             </div>
 

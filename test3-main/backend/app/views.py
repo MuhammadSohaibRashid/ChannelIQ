@@ -385,9 +385,10 @@ def optimize_shortform(request):
             clip_path = data.get("clipPath")
             clip_key = data.get("clipKey")
             selected_features = data.get("selectedFeatures", [])
+            video_url = data.get("videoURL", None)  # Get the optional video URL
 
             # Debugging log
-            logger.info(f"Received clip for optimization: {clip_path}, Key: {clip_key}, Selected Features: {selected_features}")
+            logger.info(f"Received clip for optimization: {clip_path}, Key: {clip_key}, Selected Features: {selected_features}, Video URL: {video_url}")
 
             if not clip_path or not clip_key:
                 return JsonResponse({"error": "No clip path or key provided"}, status=400)
@@ -436,9 +437,52 @@ def optimize_shortform(request):
             # Process SEO if selected
             if "SEO" in selected_features:
                 try:
-                    seo_generator = EnhancedYouTubeSEOGenerator(current_clip_path)
-                    seo_data = seo_generator.process_video_shortform(current_clip_path)
-                    results["seo"] = seo_data
+                    seo_generator = EnhancedYouTubeSEOGenerator(
+                        youtube_api_key=settings.YOUTUBE_API_KEY,
+                        openai_api_key=settings.OPENAI_API_KEY
+                    )
+                    
+                    if video_url:
+                        # If we have the original video URL, process with enhanced context
+                        try:
+                            # First get additional context from the original video
+                            video_id = seo_generator.extract_video_id(video_url)
+                            video_details = {}
+                            competitor_videos = []
+                            comments = []
+                            transcript_data = {}
+                            
+                            # Get basic video details if valid URL
+                            if video_id:
+                                try:
+                                    video_details = seo_generator.get_video_details(video_id)
+                                    competitor_videos = seo_generator.get_competitor_videos(video_details.get("title", ""))
+                                    comments = seo_generator.analyze_comments(video_id)
+                                    transcript_data = seo_generator.get_youtube_transcript_with_timestamps(video_id)
+                                except Exception as e:
+                                    logger.warning(f"Non-critical error getting additional video context: {e}")
+                            
+                            # Now process the shortform with enhanced context
+                            shortform_transcript = seo_generator.transcribe_video(current_clip_path)
+                            
+                            # Generate SEO content with combined context
+                            seo_data = seo_generator.process_video_shortform_enhanced(
+                                file_path=current_clip_path,
+                                original_video_details=video_details,
+                                original_transcript=transcript_data,
+                                competitor_videos=competitor_videos,
+                                comments=comments
+                            )
+                            results["seo"] = seo_data
+                        except Exception as e:
+                            logger.error(f"Error in enhanced SEO processing: {e}")
+                            # Fall back to basic SEO if enhanced fails
+                            seo_data = seo_generator.process_video_shortform(current_clip_path)
+                            results["seo"] = seo_data
+                    else:
+                        # Basic SEO processing without original video context
+                        seo_data = seo_generator.process_video_shortform(current_clip_path)
+                        results["seo"] = seo_data
                 except Exception as e:
                     logger.error(f"Error in SEO processing: {e}")
                     results["seo"] = {"error": str(e)}
@@ -515,7 +559,7 @@ def optimize_shortform(request):
                     
                     # Process captions
                     transcriber = DjangoVideoTranscriber(
-                        model_path="turbo",
+                        model_path="large-v3-turbo",
                         video_path=final_video_path
                     )
                     
@@ -767,11 +811,12 @@ def download_video(request):
     # If file doesn't exist locally, proceed with download
     try:
         ydl_opts = {
-            'format': 'bestvideo[height<=1080][ext=mp4]+bestaudio[ext=m4a]/best[height<=1080][ext=mp4]',
-            'outtmpl': local_file_path,
-            'quiet': False,
-            'logger': logger,
-        }
+    'format': 'bv*[height<=1080]+ba/b[height<=1080]',
+    'merge_output_format': 'mp4',
+    'outtmpl': local_file_path,
+    'quiet': False,
+    'logger': logger,
+}
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             logger.debug(f"Downloading video: {video_url}")
@@ -1159,27 +1204,37 @@ def upload_video(request):
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def google_login(request):
-    """Verify Google token and create/login user"""
+    """Verify Firebase token and create/login user"""
     token = request.data.get('token')
     
     if not token:
         return Response({'error': 'Token is required'}, status=status.HTTP_400_BAD_REQUEST)
     
     try:
-        # Verify the token
-        idinfo = id_token.verify_oauth2_token(
-            token, 
-            requests.Request(), 
-            settings.GOOGLE_OAUTH_CLIENT_ID
-        )
+        # Import Firebase Admin SDK if not already imported
+        import firebase_admin
+        from firebase_admin import auth as firebase_auth
+        from firebase_admin import credentials
         
-        if 'email' not in idinfo:
-            return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
-
+        # Initialize Firebase Admin SDK if not already initialized
+        try:
+            firebase_app = firebase_admin.get_app()
+        except ValueError:
+            # Initialize with your Firebase credentials
+            cred = credentials.Certificate(settings.FIREBASE_SERVICE_ACCOUNT_KEY_PATH)
+            firebase_app = firebase_admin.initialize_app(cred)
+        
+        # Verify the Firebase token
+        decoded_token = firebase_auth.verify_id_token(token)
+        
         # Extract user details
-        email = idinfo['email']
-        name = idinfo.get('name', '')
-        picture = idinfo.get('picture', '')
+        email = decoded_token.get('email')
+        if not email:
+            return Response({'error': 'Email not found in token'}, status=status.HTTP_401_UNAUTHORIZED)
+            
+        name = decoded_token.get('name', '')
+        picture = decoded_token.get('picture', '')
+        firebase_uid = decoded_token.get('uid') or decoded_token.get('user_id')
 
         # Find or create the user
         user, created = User.objects.get_or_create(
@@ -1189,8 +1244,14 @@ def google_login(request):
                 'first_name': name.split(' ')[0] if ' ' in name else name,
                 'last_name': name.split(' ')[1] if ' ' in name else '',
                 'is_active': True,
+                'firebase_uid': firebase_uid,  # Store Firebase UID if you have this field
             }
         )
+        
+        # If user exists but doesn't have firebase_uid, update it
+        if not created and hasattr(user, 'firebase_uid') and not user.firebase_uid:
+            user.firebase_uid = firebase_uid
+            user.save()
 
         # Generate authentication token
         token, _ = Token.objects.get_or_create(user=user)
@@ -1202,15 +1263,17 @@ def google_login(request):
                 'email': user.email,
                 'name': name,
                 'picture': picture,
+                'firebase_uid': firebase_uid,
                 'is_new': created
             }
         })
         
-    except ValueError:
-        return Response({'error': 'Invalid token'}, status=status.HTTP_401_UNAUTHORIZED)
+    except firebase_admin.exceptions.FirebaseError as e:
+        print(f"Firebase Auth Error: {str(e)}")
+        return Response({'error': 'Invalid Firebase token'}, status=status.HTTP_401_UNAUTHORIZED)
     
     except Exception as e:
-        print(f"Google Auth Error: {str(e)}") 
+        print(f"Auth Error: {str(e)}") 
         return Response({'error': str(e)}, status=status.HTTP_500_INTERNAL_SERVER_ERROR)
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
