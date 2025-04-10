@@ -38,6 +38,10 @@ from rest_framework.decorators import api_view, permission_classes
 from rest_framework.permissions import IsAuthenticated
 from rest_framework.response import Response
 import time
+import httplib2
+from google_auth_httplib2 import Request as google_auth_httplib2_Request
+import google_auth_httplib2
+from django.core.mail import send_mail
 User = get_user_model()
 # Ensure the YouTube API key is set in environment variables
 YOUTUBE_API_KEY = os.getenv("YOUTUBE_API_KEY")
@@ -54,6 +58,7 @@ def process_short_form_video(request):
             video_url = data.get("videoURL")
             clip_length = data.get("clipLength")
             clip_count = data.get("clipCount")
+            user_email = data.get("userEmail")  # Get user email from the request
             
             # Debugging log
             logger.info(f"Received video URL: {video_url}, Clip Length: {clip_length}, Clip Count: {clip_count}")
@@ -108,6 +113,33 @@ def process_short_form_video(request):
                 
                 # Debugging log
                 logger.info(f"Generated S3 clip URLs: {s3_clip_urls}")
+
+                # Send email notification if user email is provided
+                if user_email and s3_clip_urls:
+                    try:
+                        # Construct email subject and message
+                        subject = "Your Short-Form Video Processing is Complete"
+                        
+                        # Construct the message body
+                        message = f"Hello,\n\nYour video has been successfully processed into {len(s3_clip_urls)} short-form clips.\n\n"
+                        
+                        # Add clip URLs
+                        message += "Your clips are available at the following links:\n"
+                        for i, clip_data in enumerate(s3_clip_urls, 1):
+                            message += f"Clip {i}: {clip_data['url']}\n"
+                        
+                        message += f"\nClip Length: {clip_length}\n"
+                        message += "\nThank you for using our service!\n"
+                        
+                        # Send email
+                        from_email = settings.DEFAULT_FROM_EMAIL
+                        send_mail(subject, message, from_email, [user_email], fail_silently=False)
+                        
+                        # Log success
+                        logger.info(f"Email notification sent to {user_email}")
+                        
+                    except Exception as e:
+                        logger.error(f"Error sending email notification: {e}")
 
                 # Return a successful response with the S3 clip URLs
                 return JsonResponse({
@@ -206,7 +238,8 @@ def seo(request):
             localpath = data.get("localVideoPath")
             selected_features = data.get("selectedFeatures", [])  # Extract selected features
             user_id = data.get("userId")
-            print("User ID=",user_id)  # Get user ID from the request
+            user_email = data.get("userEmail")  # Get user email from the request
+            print("User ID=", user_id)  # Get user ID from the request
 
             # Debugging log
             logger.info(f"Received video URL for SEO: {video_url}, Selected Features: {selected_features}, LocalPath: {localpath}")
@@ -317,6 +350,7 @@ def seo(request):
             
             # FINAL S3 UPLOAD - Upload the final processed video to S3
             final_video_path = enhanced_audio_path or upscaled_video_path or localpath
+            s3_url = None
             
             # Only upload if we have a user ID and a processed video
             if user_id and final_video_path and os.path.exists(final_video_path):
@@ -344,6 +378,7 @@ def seo(request):
                             "key": upload_result["key"],
                             "status": "success"
                         }
+                        s3_url = upload_result["url"]
                         
                         # Update the processed file path in the final results to use the S3 URL
                         if enhanced_audio_path:
@@ -361,6 +396,56 @@ def seo(request):
                         "error": str(e),
                         "status": "error"
                     }
+            
+            # Send email notification if user email is provided
+            if user_email:
+                try:
+                    # Generate list of processed features
+                    processed_features = []
+                    if "seo" in results and "error" not in results["seo"]:
+                        processed_features.append("SEO")
+                    if "video_upscaling" in results and results["video_upscaling"].get("status") == "success":
+                        processed_features.append("Video Quality")
+                    if "audio_processing" in results and results["audio_processing"].get("status") == "success":
+                        processed_features.append("Noise Reduction")
+                    
+                    # Generate feature list text
+                    feature_list = ", ".join(processed_features)
+                    
+                    # Construct email subject and message
+                    subject = "Your Video Processing is Complete"
+                    
+                    # Construct the message body
+                    message = f"Hello,\n\nYour video has been successfully processed with the following features: {feature_list}.\n\n"
+                    
+                    # Add S3 URL if available
+                    if s3_url:
+                        message += f"You can access your processed video here: {s3_url}\n\n"
+                    
+                    # Add SEO details if available
+                    if "seo" in results and "error" not in results["seo"]:
+                        seo_data = results["seo"]
+                        message += "SEO Recommendations:\n"
+                        if "title" in seo_data:
+                            message += f"- Title: {seo_data['title']}\n"
+                        if "description" in seo_data:
+                            message += f"- Description: {seo_data['description']}\n"
+                        if "tags" in seo_data and seo_data["tags"]:
+                            message += f"- Tags: {', '.join(seo_data['tags'])}\n"
+                    
+                    message += "\nThank you for using our service!\n"
+                    
+                    # Send email
+                    from_email = settings.DEFAULT_FROM_EMAIL
+                    send_mail(subject, message, from_email, [user_email], fail_silently=False)
+                    
+                    # Log success
+                    logger.info(f"Email notification sent to {user_email}")
+                    results["email_notification"] = {"status": "success", "email": user_email}
+                    
+                except Exception as e:
+                    logger.error(f"Error sending email notification: {e}")
+                    results["email_notification"] = {"status": "error", "message": str(e)}
 
             # Return results after processing all selected features
             return JsonResponse({
@@ -376,6 +461,7 @@ def seo(request):
             return JsonResponse({"error": "Internal Server Error"}, status=500)
     else:
         return JsonResponse({"error": "Only POST requests are allowed"}, status=405)
+
 @csrf_exempt
 def optimize_shortform(request):
     if request.method == "POST":
@@ -386,6 +472,7 @@ def optimize_shortform(request):
             clip_key = data.get("clipKey")
             selected_features = data.get("selectedFeatures", [])
             video_url = data.get("videoURL", None)  # Get the optional video URL
+            user_email = data.get("userEmail")  # Get user email from the request
 
             # Debugging log
             logger.info(f"Received clip for optimization: {clip_path}, Key: {clip_key}, Selected Features: {selected_features}, Video URL: {video_url}")
@@ -579,6 +666,8 @@ def optimize_shortform(request):
             
             # Upload the final processed file to S3
             final_processed_path = current_clip_path
+            final_s3_url = None
+            
             if final_processed_path and os.path.exists(final_processed_path):
                 try:
                     # Create S3 key for the processed file
@@ -593,6 +682,7 @@ def optimize_shortform(request):
                     
                     if upload_result["success"]:
                         # Add S3 URL and key to results
+                        final_s3_url = upload_result["url"]
                         results["final_processed"] = {
                             "s3_url": upload_result["url"],
                             "s3_key": upload_result["key"],
@@ -609,6 +699,59 @@ def optimize_shortform(request):
                         "error": f"S3 upload error: {str(e)}",
                         "status": "error"
                     }
+            
+            # Send email notification if user email is provided
+            if user_email:
+                try:
+                    # Generate list of processed features
+                    processed_features = []
+                    for feature in selected_features:
+                        if feature == "SEO" and "seo" in results and "error" not in results["seo"]:
+                            processed_features.append("SEO")
+                        elif feature == "Video Quality" and "video_upscaling" in results and "error" not in results["video_upscaling"]:
+                            processed_features.append("Video Quality")
+                        elif feature == "Noise Reduction" and "audio_processing" in results and results["audio_processing"].get("status") == "success":
+                            processed_features.append("Noise Reduction")
+                        elif feature == "Captions" and "captions" in results and results["captions"].get("status") == "success":
+                            processed_features.append("Captions")
+                    
+                    # Generate feature list text
+                    feature_list = ", ".join(processed_features)
+                    
+                    # Construct email subject and message
+                    subject = "Your Short-Form Video Optimization is Complete"
+                    
+                    # Construct the message body
+                    message = f"Hello,\n\nYour short-form video has been successfully optimized with the following features: {feature_list}.\n\n"
+                    
+                    # Add S3 URL if available
+                    if final_s3_url:
+                        message += f"You can access your optimized video here: {final_s3_url}\n\n"
+                    
+                    # Add SEO details if available
+                    if "seo" in results and "error" not in results["seo"]:
+                        seo_data = results["seo"]
+                        message += "SEO Recommendations:\n"
+                        if "title" in seo_data:
+                            message += f"- Title: {seo_data['title']}\n"
+                        if "description" in seo_data:
+                            message += f"- Description: {seo_data['description']}\n"
+                        if "tags" in seo_data and seo_data["tags"]:
+                            message += f"- Tags: {', '.join(seo_data['tags'])}\n"
+                    
+                    message += "\nThank you for using our service!\n"
+                    
+                    # Send email
+                    from_email = settings.DEFAULT_FROM_EMAIL
+                    send_mail(subject, message, from_email, [user_email], fail_silently=False)
+                    
+                    # Log success
+                    logger.info(f"Email notification sent to {user_email}")
+                    results["email_notification"] = {"status": "success", "email": user_email}
+                    
+                except Exception as e:
+                    logger.error(f"Error sending email notification: {e}")
+                    results["email_notification"] = {"status": "error", "message": str(e)}
             
             # Clean up local files
             try:
@@ -1014,8 +1157,8 @@ def youtube_callback(request):
     return HttpResponse(html_response)
 @api_view(['POST'])
 @permission_classes([IsAuthenticated])
-def upload_video(request):
-    """Download video from S3 URL and upload to YouTube"""
+def upload_youtube_video(request):
+    """Download video from S3 URL and upload to YouTube with improved token handling"""
     user = request.user
     
     # Check if user has valid YouTube credentials
@@ -1023,9 +1166,15 @@ def upload_video(request):
         from .models import YouTubeAuth
         youtube_auth = YouTubeAuth.objects.get(user=user)
         if not youtube_auth.credentials:
-            return Response({'error': 'YouTube authorization required'}, status=401)
+            return Response({
+                'error': 'YouTube authorization required',
+                'needs_auth': True
+            }, status=401)
     except YouTubeAuth.DoesNotExist:
-        return Response({'error': 'YouTube authorization required'}, status=401)
+        return Response({
+            'error': 'YouTube authorization required',
+            'needs_auth': True
+        }, status=401)
     
     # Get video URL and metadata
     video_url = request.POST.get('video_url')
@@ -1037,86 +1186,113 @@ def upload_video(request):
     if not video_url:
         return Response({'error': 'No video URL provided'}, status=400)
     
-    # Download video from URL
-    import tempfile
-    import os
-    import requests
+    # Initialize variables for resource cleanup
+    temp_file_name = None
+    media = None
     
-    temp_file = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
-    temp_file.close()
-    
-    # For S3 URLs, we might use boto3 to get the file directly
-    # But for this implementation, we'll use requests
     try:
+        # Download video from URL
+        import tempfile
+        import os
+        import requests
+        
+        temp_file = tempfile.NamedTemporaryFile(suffix='.mp4', delete=False)
+        temp_file_name = temp_file.name
+        temp_file.close()
+        
         # Download the file from the URL
         if "amazonaws.com" in video_url and s3_key:
             # For S3 URLs, we can optionally use boto3 instead of requests
-            # This is just an example of using boto3 directly, uncomment if needed
-            """
-            import boto3
-            s3_client = boto3.client('s3')
-            bucket_name = 'your-bucket-name'  # Extract from the URL or config
-            s3_client.download_file(bucket_name, s3_key, temp_file.name)
-            """
-            # Otherwise, just use requests:
             response = requests.get(video_url, stream=True)
         else:
             # For local or other URLs
             response = requests.get(video_url, stream=True)
         
-        response.raise_for_status()  # Raise exception for 4XX/5XX status codes
+        response.raise_for_status()
         
         # Write the content to the temporary file
-        with open(temp_file.name, 'wb') as f:
+        with open(temp_file_name, 'wb') as f:
             for chunk in response.iter_content(chunk_size=8192):
                 f.write(chunk)
         
-        print(f"DEBUG: Downloaded video from URL to: {temp_file.name}")
-        print(f"DEBUG: File size: {os.path.getsize(temp_file.name)}")
+        print(f"DEBUG: Downloaded video from URL to: {temp_file_name}")
+        print(f"DEBUG: File size: {os.path.getsize(temp_file_name)}")
         
-        media = None
+        # Use Google OAuth credentials with improved token handling
+        from google.oauth2 import credentials as google_credentials
+        from googleapiclient.discovery import build
+        from googleapiclient.http import MediaFileUpload
+        from google.auth.exceptions import RefreshError
+        
+        # Get credentials from database
+        creds_data = youtube_auth.credentials
+        credentials = google_credentials.Credentials(
+            token=creds_data.get('token'),
+            refresh_token=creds_data.get('refresh_token'),
+            token_uri=creds_data.get('token_uri'),
+            client_id=creds_data.get('client_id'),
+            client_secret=creds_data.get('client_secret'),
+            scopes=creds_data.get('scopes')
+        )
+        
+        # Validate token before proceeding
         try:
-            # Use Google OAuth credentials
-            from google.oauth2 import credentials as google_credentials
-            from googleapiclient.discovery import build
-            from googleapiclient.http import MediaFileUpload
+            # Force a token refresh to check validity
+            request_session = requests.Session()
+            auth_req = google_auth_httplib2.Request(httplib2.Http())
+            credentials.refresh(auth_req)
             
-            # Get credentials from database
-            creds_data = youtube_auth.credentials
-            credentials = google_credentials.Credentials(
-                token=creds_data.get('token'),
-                refresh_token=creds_data.get('refresh_token'),
-                token_uri=creds_data.get('token_uri'),
-                client_id=creds_data.get('client_id'),
-                client_secret=creds_data.get('client_secret'),
-                scopes=creds_data.get('scopes')
-            )
-            
-            # Create YouTube service
-            youtube = build('youtube', 'v3', credentials=credentials)
-            
-            # Create video metadata
-            body = {
-                'snippet': {
-                    'title': title,
-                    'description': description,
-                    'tags': tags,
-                    'categoryId': '22'  # People & Blogs category
-                },
-                'status': {
-                    'privacyStatus': 'private',  # Start as private, can be changed later
-                    'selfDeclaredMadeForKids': False
-                }
+            # Update credentials in database after refresh
+            youtube_auth.credentials = {
+                'token': credentials.token,
+                'refresh_token': credentials.refresh_token,
+                'token_uri': credentials.token_uri,
+                'client_id': credentials.client_id,
+                'client_secret': credentials.client_secret,
+                'scopes': credentials.scopes
             }
+            youtube_auth.save()
             
-            # Upload video file
-            media = MediaFileUpload(
-                temp_file.name,
-                mimetype='video/mp4',
-                resumable=True
-            )
-            
-            # Execute upload request
+        # In upload_youtube_video view function
+        except RefreshError as refresh_error:
+            # Token is invalid and couldn't be refreshed
+            if 'invalid_grant' in str(refresh_error):
+                # Set to empty dict instead of None to satisfy NOT NULL constraint
+                youtube_auth.credentials = {}  # Instead of None
+                youtube_auth.save()
+                
+                return Response({
+                    'error': 'YouTube authorization expired',
+                    'needs_auth': True,
+                    'detail': 'Your YouTube authorization has expired. Please re-authorize.'
+                }, status=401)
+        
+        # Create YouTube service with validated credentials
+        youtube = build('youtube', 'v3', credentials=credentials)
+        
+        # Create video metadata
+        body = {
+            'snippet': {
+                'title': title,
+                'description': description,
+                'tags': tags,
+                'categoryId': '22'  # People & Blogs category
+            },
+            'status': {
+                'privacyStatus': 'private',  # Start as private, can be changed later
+                'selfDeclaredMadeForKids': False
+            }
+        }
+        
+        # Upload video file
+        media = MediaFileUpload(
+            temp_file_name,
+            mimetype='video/mp4',
+            resumable=True
+        )
+        
+        # Execute upload request with error handling
+        try:
             request = youtube.videos().insert(
                 part='snippet,status',
                 body=body,
@@ -1126,72 +1302,26 @@ def upload_video(request):
             response = request.execute()
             print(f"DEBUG: Upload successful, video ID: {response.get('id')}")
             
-            # Update credentials if they were refreshed
-            if credentials.token != creds_data.get('token'):
-                youtube_auth.credentials = {
-                    'token': credentials.token,
-                    'refresh_token': credentials.refresh_token,
-                    'token_uri': credentials.token_uri,
-                    'client_id': credentials.client_id,
-                    'client_secret': credentials.client_secret,
-                    'scopes': credentials.scopes
-                }
-                youtube_auth.save()
-            
             # Return video ID
             return Response({'success': True, 'video_id': response['id']})
             
-        except Exception as e:
-            import traceback
-            print(f"DEBUG: YouTube upload error: {str(e)}")
-            print(traceback.format_exc())
-            return Response({'error': str(e)}, status=500)
-            
-        # Improved file cleanup section to replace in your upload_from_s3 function
-        finally:
-            # Close the MediaFileUpload object to release the file
-            if media:
-                try:
-                    media.close()
-                except:
-                    pass
-            
-            # Wait longer before trying to delete the file on Windows
-            import time
-            import platform
-            
-            # Windows needs more time to release file handles
-            if platform.system() == 'Windows':
-                time.sleep(1.5)  # Longer wait time for Windows
+        except Exception as api_error:
+            # Check if this is a token-related error
+            error_str = str(api_error).lower()
+            if 'invalid_grant' in error_str or 'unauthorized' in error_str or '401' in error_str:
+                # Set to empty dict instead of None
+                youtube_auth.credentials = {}  # Instead of None
+                youtube_auth.save()
+                
+                return Response({
+                    'error': 'YouTube authorization error during upload',
+                    'needs_auth': True,
+                    'detail': 'Your YouTube authorization has expired. Please re-authorize.'
+                }, status=401)
             else:
-                time.sleep(0.5)
-            
-            # Clean up temporary file with error handling and retry mechanism
-            max_retries = 3
-            retry_count = 0
-            while retry_count < max_retries:
-                try:
-                    if os.path.exists(temp_file.name):
-                        os.unlink(temp_file.name)
-                        print(f"INFO: Successfully deleted temporary file: {temp_file.name}")
-                        break  # Exit loop if deletion succeeds
-                except Exception as e:
-                    retry_count += 1
-                    print(f"WARNING: Attempt {retry_count} - Could not delete temporary file: {str(e)}")
-                    if retry_count < max_retries:
-                        time.sleep(1.0)  # Wait before retrying
-                    else:
-                        print(f"ERROR: Failed to delete temporary file after {max_retries} attempts")
-                        # On Windows, schedule the file for deletion on next reboot as a last resort
-                        if platform.system() == 'Windows':
-                            try:
-                                import ctypes
-                                MOVEFILE_DELAY_UNTIL_REBOOT = 4
-                                ctypes.windll.kernel32.MoveFileExW(temp_file.name, None, MOVEFILE_DELAY_UNTIL_REBOOT)
-                                print(f"INFO: File {temp_file.name} scheduled for deletion on next reboot")
-                            except Exception as move_ex:
-                                print(f"ERROR: Failed to schedule file for deletion: {str(move_ex)}")
-    
+                # Some other API error occurred
+                raise
+                
     except requests.RequestException as e:
         print(f"ERROR: Failed to download video: {str(e)}")
         return Response({'error': f'Failed to download video: {str(e)}'}, status=500)
@@ -1201,6 +1331,71 @@ def upload_video(request):
         print(f"ERROR: {str(e)}")
         print(traceback.format_exc())
         return Response({'error': str(e)}, status=500)
+        
+    finally:
+    # Clean up resources
+        if temp_file_name:
+            if media:
+                # Try to close the media
+                try:
+                    media.stream().close()
+                except:
+                    pass
+            
+            # Add a small delay before trying to delete
+            import time
+            time.sleep(2)
+            
+            cleanup_temporary_file(temp_file_name, media)
+
+
+def cleanup_temporary_file(temp_file_name, media=None):
+    """Helper function to clean up temporary files with proper error handling"""
+    if not temp_file_name:
+        return
+        
+    import os
+    import time
+    import platform
+    
+    # Close the MediaFileUpload object to release the file
+    if media:
+        try:
+            media.close()
+        except:
+            pass
+    
+    # Wait longer before trying to delete the file on Windows
+    if platform.system() == 'Windows':
+        time.sleep(1.5)
+    else:
+        time.sleep(0.5)
+    
+    # Clean up temporary file with error handling and retry mechanism
+    max_retries = 3  # Increased from 1 to 3 for better reliability
+    retry_count = 0
+    while retry_count < max_retries:
+        try:
+            if os.path.exists(temp_file_name):
+                os.unlink(temp_file_name)
+                print(f"INFO: Successfully deleted temporary file: {temp_file_name}")
+                break
+        except Exception as e:
+            retry_count += 1
+            print(f"WARNING: Attempt {retry_count} - Could not delete temporary file: {str(e)}")
+            if retry_count < max_retries:
+                time.sleep(2.0)  # Increased wait time between attempts
+            else:
+                print(f"ERROR: Failed to delete temporary file after {max_retries} attempts")
+                # On Windows, schedule the file for deletion on next reboot as a last resort
+                if platform.system() == 'Windows':
+                    try:
+                        import ctypes
+                        MOVEFILE_DELAY_UNTIL_REBOOT = 4
+                        ctypes.windll.kernel32.MoveFileExW(temp_file_name, None, MOVEFILE_DELAY_UNTIL_REBOOT)
+                        print(f"INFO: File {temp_file_name} scheduled for deletion on next reboot")
+                    except Exception as move_ex:
+                        print(f"ERROR: Failed to schedule file for deletion: {str(move_ex)}")
 @api_view(['POST'])
 @permission_classes([AllowAny])
 def google_login(request):

@@ -620,7 +620,7 @@ class EnhancedYouTubeSEOGenerator:
             competitor_analysis = ""
             if competitor_videos:
                 competitor_analysis = "Top competitor videos:"
-                for idx, video in enumerate(competitor_videos[:3], 1):
+                for idx, video in enumerate(competitor_videos[:3], 5):
                     competitor_analysis += f"{idx}. Title: {video.get('title', 'Unknown')}"
                     competitor_analysis += f"   Tags: {', '.join(video.get('tags', [])[:10])}"
                     competitor_analysis += f"   Views: {video.get('view_count', 0)}"
@@ -628,7 +628,7 @@ class EnhancedYouTubeSEOGenerator:
             # Prepare comment insights
             comment_insights = ""
             if comments:
-                sample_comments = comments[:10]
+                sample_comments = comments[:30]
                 comment_insights = "Sample comments:" + "".join(f"- {comment}" for comment in sample_comments)
             
             # Get original transcript summary if available
@@ -643,47 +643,70 @@ class EnhancedYouTubeSEOGenerator:
             client = openai.OpenAI(api_key=self.openai_api_key)
             
             prompt = f"""
-    Analyze this short-form video clip transcript and create optimized metadata that's aligned with the original content:
+Analyze this short-form video clip and create SEO-optimized metadata for maximum visibility, engagement, and virality.
 
-    SHORTFORM TRANSCRIPT:
-    {shortform_transcript["text"]}
+SHORTFORM VIDEO TRANSCRIPT:
+{shortform_transcript["text"]}
 
-    ORIGINAL VIDEO CONTEXT:
-    Title: {video_title}
-    Description: {video_description[:500]}... (truncated)
-    Tags: {', '.join(original_tags[:15])}
+ORIGINAL VIDEO CONTEXT:
+- Title: {video_title}
+- Description (truncated): {video_description}...
+- Tags: {', '.join(original_tags)}
+{f"- ORIGINAL TRANSCRIPT EXCERPT:{original_transcript_text}" if original_transcript_text else ""}
 
-    {f"ORIGINAL TRANSCRIPT EXCERPT:{original_transcript_text}" if original_transcript_text else ""}
+COMPETITOR INSIGHTS:
+{competitor_analysis}
 
-    {competitor_analysis}
+COMMENT INSIGHTS:
+{comment_insights}
 
-    {comment_insights}
+CREATE:
+1. **TITLE**:
+   - One attention-grabbing title under 60 characters
+   - Use curiosity hooks, emotional triggers, or trending phrases like “POV”, “Wait for it”, “Watch until end”
+   - Make it specific, clickable, and aligned with the content
 
-    CREATE:
-    1. 1 attention-grabbing title (under 60 chars)
-    2. Engaging description with hooks and clear CTAs (under 150 chars)
-    3. 15-20 trending hashtags in this niche
-    4. 5-7 primary keywords to target
-    5. A brief content strategy note (what works well in this niche)
+2. **DESCRIPTION** (200–300 characters preferred, max 150 visible characters):
+   - Hook viewers immediately with keywords in the first 80 characters
+   - Include emojis to boost visual appeal 🎯🔥📲
+   - Summarize the content’s value or emotional appeal
+   - Include a clear CTA (like, follow, save, share, comment, etc.)
 
-    FORMAT RESPONSE AS JSON:
-    {{
-        "title", "Engaging title under 60 chars",
-        "description": "Engaging description with hooks",
-        "hashtags": ["#tag1", "#tag2", ...],
-        "keywords": ["keyword1", "keyword2", ...],
-        "content_strategy": "Brief strategy note on content optimization"
-    }}
+3. **HASHTAGS** (15–20 total):
+   - Use a strategic mix:
+     * 3–5 viral/trending hashtags in the niche
+     * 2–3 platform-specific high-performance hashtags
+     * 4–6 content-specific descriptive hashtags
+     * 3–4 broader category hashtags
+   - List in order: from most specific to most general
+   - Avoid overly saturated tags
+   - Format as a list of strings, include "#" in tags (e.g. "#funny")
 
-    OPTIMIZATION STRATEGY:
-    - Ensure consistency with the original video's topic and branding
-    - Focus on trending sounds/topics
-    - Use hook-based titles ("Wait for it", "Watch until end")
-    - Include emotion-triggering elements
-    - Target algorithm-favored terms
-    - Optimize for high CTR and completion rate
-    - Leverage the original video's successful keywords/themes
-    """
+4. **KEYWORDS** (5–7 total):
+   - Include 2–3 primary keywords (core topics/themes)
+   - 3–4 secondary/supporting keywords (niche terms or related concepts)
+
+5. **CONTENT STRATEGY NOTE**:
+   - Provide 1–2 sentences on why this format/content works in the niche
+   - Reference hooks, pacing, topic angles, or style trends that resonate with audiences
+
+FORMAT RESPONSE AS JSON:
+{{
+    "title": "Engaging title under 60 chars",
+    "description": "Hook-rich description with emojis and CTA",
+    "hashtags": ["#tag1", "#tag2", "#tag3", ...],
+    "keywords": ["keyword1", "keyword2", "keyword3", ...],
+    "content_strategy": "Brief note on why this short-form content performs well"
+}}
+
+OPTIMIZATION STRATEGY:
+- Match tone and topic with original long-form video
+- Prioritize high-CTR structures: surprise, curiosity, controversy, relatability
+- Focus on trending topics, sounds, and platform-native language
+- Keep it high-impact and scroll-stopping from the first 3 seconds
+- Tailor keywords and tags to platform-specific discovery systems
+"""
+            print("Prompt: ",prompt)
 
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",

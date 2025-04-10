@@ -14,12 +14,14 @@ const Optimizevideo_shortform = () => {
   const [enhancementType, setEnhancementType] = useState("");
   const [isCaptionAdded, setIsCaptionAdded] = useState(false); // New state for captions
   const [originalClip, setOriginalClip] = useState(null);
+  const [videoTitle, setVideoTitle] = useState(""); // Added state for video title
 
   useEffect(() => {
     if (location.state) {
       const { results = {}, selectedFeatures, selectedClip, videoTitle } = location.state;
       console.log("Received Results:", results);
       setOriginalClip(selectedClip);
+      setVideoTitle(videoTitle || "Untitled Video");
 
       // Check if we have the final processed S3 URL
       if (results.final_processed && results.final_processed.s3_url) {
@@ -42,7 +44,7 @@ const Optimizevideo_shortform = () => {
         }
         
         setEnhancementType(enhancementLabel);
-        setMessage("Video processing completed successfully!");
+        setMessage("Your short-form video is enhanced and good to go!");
         
         // Save to Firebase
         saveOptimizationDetails({
@@ -96,7 +98,7 @@ const Optimizevideo_shortform = () => {
 
         if (selectedPath) {
           setVideoPath(selectedPath);
-          setMessage("Video processing completed successfully!");
+          setMessage("Your short-form video is enhanced and good to go!");
           setEnhancementType(enhancementType);
           
           // Save to Firebase
@@ -209,33 +211,51 @@ const Optimizevideo_shortform = () => {
       },
     });
   };
+// Handle video download
+const handleDownload = () => {
+  if (videoPath) {
+    // Create a temporary anchor element
+    const link = document.createElement("a");
+    link.href = videoPath;
+    
+    // Set the download attribute and suggested filename
+    link.download = `${videoTitle.replace(/[^\w\s]/gi, "_")}_optimized.mp4`;
+    
+    // Programmatically click the link to trigger download
+    document.body.appendChild(link);
+    link.click();
+    
+    // Clean up
+    document.body.removeChild(link);
+  }
+};
 
   return (
     <div className="clipping-app">
       {/* Navbar with User Session */}
-      <header className="header">
-        <h1 className="logo" onClick={() => navigate("/")}>
-          <span className="bold">Channel-</span>
-          <span className="highlight">IQ</span>
-        </h1>
+       {/* Header */}
+       <header className="dashboard-header">
+                <div className="logo-container" onClick={() => navigate("/")}>
+                    <h1 className="logo">
+                        <span className="logo-bold">Channel-</span>
+                        <span className="logo-highlight">IQ</span>
+                    </h1>
+                </div>
 
-        <nav className="nav">
-          {user ? (
-            <div className="user-info">
-              <img src={user.picture} alt="User" className="user-avatar" />
-              <span className="username">{user.name}</span>
-              <button className="logout-btn" onClick={logout}>Logout</button>
-            </div>
-          ) : (
-            <button className="login-btn" onClick={() => navigate("/login")}>
-              Login
-            </button>
-          )}
-          <button className="home-button" onClick={() => navigate("/clipper")}>
-            Back to Clipper
-          </button>
-        </nav>
-      </header>
+                <div className="header-right">
+                    {user ? (
+                        <div className="user-profile">
+                            <img src={user.picture} alt="User" className="user-avatar" />
+                            <span className="username">{user.name}</span>
+                            <button className="logout-button" onClick={logout}>Logout</button>
+                        </div>
+                    ) : (
+                        <button className="login-button" onClick={() => navigate("/login")}>
+                            Login
+                        </button>
+                    )}
+                </div>
+            </header>
 
       <div className="optimized-video-page">
         <header className="page-header">
@@ -260,6 +280,9 @@ const Optimizevideo_shortform = () => {
                 <div className="action-buttons">
                   <button className="comparison-btn" onClick={handleCompare}>
                     Compare Results
+                  </button>
+                  <button className="download-btn" onClick={handleDownload}>
+                    Download Video
                   </button>
                 </div>
               </div>

@@ -98,7 +98,6 @@ const OptimizeVideo = () => {
         selectedFeatures: selectedFeatures || [],
         enhancementType: enhancementType,
         status: results?.s3_upload?.status || results?.audio_processing?.status || "failed",
-        message: message || "",
         timestamp: serverTimestamp(),
       }
     }, { merge: true })

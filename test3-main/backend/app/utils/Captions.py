@@ -242,94 +242,18 @@ class DjangoVideoTranscriber:
 
     def _find_optimal_text_position_pil(self, frame, text_height, text_width, face_padding=50):
         """
-        Find the optimal position for text based on content analysis using PIL measurements:
-        1. Detect faces
-        2. Position text to avoid faces, preferring the bottom of the frame
+        Return default position for captions - bottom center of the frame
         """
-        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-        
-        # Detect faces
-        faces = self.face_cascade.detectMultiScale(
-            gray, 
-            scaleFactor=1.1, 
-            minNeighbors=5, 
-            minSize=(30, 30)
-        )
-        
         frame_height, frame_width = frame.shape[:2]
-        
-        # Default position (bottom center)
-        default_y = frame_height - 300  # Raised position from bottom
-        best_y = default_y  # Initialize best_y with default value
-        
-        # Ensure text doesn't go off-screen horizontally
-        text_margin = 30  # Margin from screen edges
-        
-        # Horizontal positioning (center text but ensure it fits)
-        text_x = max(text_margin, (frame_width - text_width) // 2)
-        if text_x + text_width > frame_width - text_margin:
-            text_x = frame_width - text_width - text_margin
-        
-        # If no faces detected, return default position
-        if len(faces) == 0:
-            return text_x, best_y
-        
-        # Calculate the lower third of the frame
-        lower_third_start = frame_height * 2 // 3
-        
-        # Check if any faces are in the lower third
-        faces_in_lower_third = [face for face in faces if (face[1] + face[3]) > lower_third_start]
-        
-        # If no faces in lower third, use default bottom position
-        if len(faces_in_lower_third) == 0:
-            return text_x, best_y
-        
-        # We have faces in lower third, so let's find alternative position
-        # Try top of the frame
-        top_y = 80
-        
-        # Check if there are faces at the top
-        faces_at_top = [face for face in faces if face[1] < text_height + top_y + face_padding]
-        
-        if len(faces_at_top) == 0:
-            # No faces at top, position there
-            best_y = top_y
-            return text_x, best_y
-        
-        # Both top and bottom have faces
-        # Calculate best position that maximizes distance from faces
-        
-        # Create a heat map of face positions
-        heat_map = np.zeros(frame_height)
-        
-        for (x, y, w, h) in faces:
-            # Add heat to the areas where faces are located
-            face_center_y = y + h // 2
             
-            # Add decreasing heat as we move away from the face
-            for i in range(frame_height):
-                distance = abs(i - face_center_y)
-                if distance < face_padding * 2:
-                    heat_map[i] += 1 - (distance / (face_padding * 2))
+        # Calculate default position (bottom center)
+        default_y = frame_height - 300  # Fixed position from bottom
         
-        # Find the coolest spot with enough space for text
-        min_heat = float('inf')
+        # Center text horizontally
+        text_x = max(30, (frame_width - text_width) // 2)
         
-        # Adjust the starting point to account for text being drawn from its baseline in PIL
-        # With PIL, text is positioned from the top-left corner, not from the baseline as in cv2
-        for y in range(text_height, frame_height - 30):
-            # Calculate average heat in the text area
-            avg_heat = np.mean(heat_map[y - text_height:y])
-            
-            if avg_heat < min_heat:
-                min_heat = avg_heat
-                best_y = y
-        
-        # Final safety check to ensure text is visible
-        if best_y + text_height > frame_height - text_margin:
-            best_y = frame_height - text_height - text_margin
-        
-        return text_x, best_y
+        # Return fixed position regardless of face detection
+        return text_x, default_y
 
     def _format_text_two_rows(self, words):
         """Group words into chunks of up to 2 lines. Reset when second line is filled."""

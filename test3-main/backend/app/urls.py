@@ -13,7 +13,7 @@ urlpatterns = [
     path('youtube/check-auth/', views.check_auth, name='youtube-check-auth'),
     path('youtube/authorize/', views.authorize_youtube, name='youtube-authorize'),
     path('youtube/callback/', views.youtube_callback, name='youtube-callback'),
-    path('youtube/upload/', views.upload_video, name='youtube-upload'),
+    path('youtube/upload/', views.upload_youtube_video, name='youtube-upload'),
     path('auth/google-login/', views.google_login, name='google-login'),
     path('youtube/get-auth-url/', views.get_youtube_auth_url, name='youtube_auth_url'),
 ]

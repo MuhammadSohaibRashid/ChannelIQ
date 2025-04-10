@@ -3,7 +3,7 @@ from dotenv import load_dotenv
 import os
 import json
 import re
-
+import time
 load_dotenv()
 
 client = OpenAI(
@@ -19,43 +19,124 @@ def validate_clip_duration(start, end, min_duration, max_duration):
 
 def extract_times(json_string, min_duration, max_duration, transcript_lines):
     try:
+        # Debug the raw response
+        print("Raw response from OpenAI:")
+        print(json_string)
+        
+        # Return early if the response is empty
+        if not json_string or json_string.isspace():
+            print("Error: Empty response from OpenAI")
+            return []
+        
         # Clean the JSON string
         json_string = re.sub(r'```json\s*|\s*```', '', json_string.strip())
-
-        # Parse the JSON string
-        data = json.loads(json_string)
-        print("Time Given by Openai: ", data)
         
-        # Extract highlights and adjust end times
+        # Debug the cleaned JSON string
+        print("Cleaned JSON string:")
+        print(json_string)
+        
+        # Try to parse the JSON string
+        try:
+            data = json.loads(json_string)
+            print("Time Given by OpenAI: ", data)
+            
+            # Check if the data has a 'highlights' key and extract the array
+            if isinstance(data, dict) and "highlights" in data:
+                data = data["highlights"]
+                
+        except json.JSONDecodeError as e:
+            print(f"Initial JSON parsing error: {e}")
+            
+            # Try more aggressive cleaning
+            json_string = re.sub(r'[^\x00-\x7F]+', '', json_string)  # Remove non-ASCII chars
+            json_string = re.sub(r'[\n\r\t]', '', json_string)
+            json_string = re.sub(r',\s*}', '}', json_string)
+            json_string = re.sub(r',\s*\]', ']', json_string)
+            
+            # Try to find JSON-like structure within the text
+            match = re.search(r'\[.*\]', json_string, re.DOTALL)
+            if match:
+                json_string = match.group(0)
+                print("Extracted JSON array:")
+                print(json_string)
+            
+            try:
+                data = json.loads(json_string)
+                print("Successfully parsed JSON after cleaning")
+                
+                # Check if the data has a 'highlights' key and extract the array
+                if isinstance(data, dict) and "highlights" in data:
+                    data = data["highlights"]
+                    
+            except json.JSONDecodeError:
+                print("Still couldn't parse JSON, checking for single object")
+                # Check if it's a single object instead of an array
+                match = re.search(r'\{.*\}', json_string, re.DOTALL)
+                if match:
+                    try:
+                        obj = json.loads(match.group(0))
+                        
+                        # Check if obj has a 'highlights' key
+                        if "highlights" in obj and isinstance(obj["highlights"], list):
+                            data = obj["highlights"]
+                        else:
+                            data = [obj]  # Convert to list
+                            
+                        print("Successfully parsed single JSON object")
+                    except json.JSONDecodeError:
+                        print("Failed to parse single object too")
+                        return []
+                else:
+                    print("No valid JSON structure found")
+                    return []
+        
+        # Extract highlights 
         highlights = []
         for clip in data:
             try:
-                start_time = float(clip["start"])
-                end_time = float(clip["end"])
+                # Check if this is a continuous clip or a clip with cuts
+                if "segments" in clip:
+                    # This is a clip with cuts
+                    segments = []
+                    for segment in clip["segments"]:
+                        start_time = float(segment["start"])
+                        end_time = float(segment["end"])
+                        
+                        # Find the proper ending timestamp in the transcript
+                        adjusted_end_time = find_proper_ending_timestamp(end_time, transcript_lines)
+                        
+                        segments.append((int(start_time), int(adjusted_end_time)))
+                    
+                    highlights.append({
+                        "type": "cut",
+                        "segments": segments,
+                        "content": clip.get("content", "")
+                    })
+                else:
+                    # This is a continuous clip
+                    start_time = float(clip["start"])
+                    end_time = float(clip["end"])
+                    
+                    # Find the proper ending timestamp in the transcript
+                    adjusted_end_time = find_proper_ending_timestamp(end_time, transcript_lines)
+                    
+                    # Add clip with adjusted end time
+                    highlights.append({
+                        "type": "continuous",
+                        "segment": (int(start_time), int(adjusted_end_time)),
+                        "content": clip.get("content", "")
+                    })
                 
-                # Find the proper ending timestamp in the transcript
-                adjusted_end_time = find_proper_ending_timestamp(end_time, transcript_lines)
-                
-                # Add clip with adjusted end time
-                highlights.append((int(start_time), int(adjusted_end_time)))
-                
-            except (ValueError, TypeError) as e:
+            except (ValueError, TypeError, KeyError) as e:
                 print(f"Error processing clip: {e}")
+                print(f"Problematic clip data: {clip}")
                 continue
 
+        print(f"Successfully extracted {len(highlights)} highlights")
         return highlights
-    except json.JSONDecodeError as e:
-        print(f"Error parsing JSON: {e}")
-        # Attempt to fix common JSON formatting issues
-        try:
-            cleaned_json = re.sub(r'[\n\r\t]', '', json_string)
-            cleaned_json = re.sub(r',\s*}', '}', cleaned_json)
-            data = json.loads(cleaned_json)
-            return extract_times(json.dumps(data), min_duration, max_duration, transcript_lines)
-        except:
-            return []
+        
     except Exception as e:
-        print(f"Unexpected error: {e}")
+        print(f"Unexpected error in extract_times: {e}")
         return []
 
 def find_proper_ending_timestamp(suggested_end, transcript_lines):
@@ -99,17 +180,18 @@ def find_proper_ending_timestamp(suggested_end, transcript_lines):
     return suggested_end
 
 
-def GetHighlight(transcription, num_highlights, clip_length):
+def GetHighlight(transcription, num_highlights, clip_length, max_retries=1):
     """
-    Get highlights from transcription
+    Get highlights from transcription with option for continuous clips or clips with cuts
     
     Args:
         transcription (str): Transcription text with timestamps
         num_highlights (int): Number of highlights to extract
         clip_length (int, str): Length of each clip in seconds or "auto"
+        max_retries (int): Maximum number of retries if the API call fails
     
     Returns:
-        list: List of tuples containing start and end times for highlights
+        list: List of dictionaries containing highlight information
     """
     # Handle various input types for clip_length
     is_auto_mode = False
@@ -134,114 +216,178 @@ def GetHighlight(transcription, num_highlights, clip_length):
     # Set maximum duration cap for auto mode (2 minutes = 120 seconds)
     MAX_AUTO_DURATION = 120
     
-    # If using specific clip length, calculate min_duration as 50% of max length
-    # If using auto mode, set minimum duration to 15 seconds
-    min_duration = 15 if is_auto_mode else max(15, max_duration * 0.5)
+    # If using specific clip length, calculate min_duration as 75% of max length
+    # This forces clips to be much closer to the requested length
+    min_duration = 15 if is_auto_mode else max(15, max_duration * 0.75)
 
     # Create the appropriate system prompt based on whether we're in auto mode
     if is_auto_mode:
-        system_prompt = f'''You are an expert video editor specializing in creating engaging short-form content. Analyze this transcription (which includes timestamps) and identify the {num_highlights} most compelling segments for short clips.
+        system_prompt = f'''You are an expert video editor specializing in creating engaging short-form content. Analyze this transcription and identify EXACTLY {num_highlights} most compelling segments - no more, no less.
 
-THE MOST IMPORTANT REQUIREMENT (CRITICAL): Each clip MUST be EXACTLY between {min_duration} and {MAX_AUTO_DURATION} seconds long. This is a hard requirement - clips shorter than {min_duration} seconds or longer than {MAX_AUTO_DURATION} seconds will be rejected.
+CRITICAL REQUIREMENTS (MUST FOLLOW):
+1. Generate EXACTLY {num_highlights} highlights - not more, not less.
+2. STRICT DURATION ENFORCEMENT: Each highlight MUST be between {min_duration} and {MAX_AUTO_DURATION} seconds total duration.
+3. Always calculate durations precisely by subtracting start from end timestamps.
+4. VERIFY EVERY TIMESTAMP before submitting - clips with incorrect durations will be REJECTED.
 
-SELECTING SEGMENTS:
-- Look for moments that work well as standalone clips with clear beginnings and endings
-- For each clip, YOU decide the OPTIMAL duration (between {min_duration}-{MAX_AUTO_DURATION} seconds)
-- Choose the length that best fits the specific content of each highlight
-- Target complete thoughts or stories (don't cut mid-sentence)
-- Prioritize:
-  * Surprising revelations or "aha moments"
-  * Concise explanations of interesting concepts
-  * Emotional or humorous moments
-  * High-energy or dramatic segments
+YOU CAN CHOOSE BETWEEN TWO TYPES OF HIGHLIGHTS:
+1. CONTINUOUS CLIPS (PREFERRED): A single uninterrupted segment that captures a complete thought.
+2. SEGMENTED CLIPS (USE SPARINGLY): Only use if absolutely necessary to remove irrelevant content.
 
-TIMING INSTRUCTIONS (EXTREMELY IMPORTANT):
-- Calculate your start and end times carefully to ensure clips are within the {min_duration}-{MAX_AUTO_DURATION} second range
-- DOUBLE-CHECK your start/end timestamps and verify each clip's duration before submitting
-- Choose natural break points at the beginning and end of segments
-- The ending time must correspond to the completion of a full thought or sentence
-- Always include complete sentences; never cut off mid-sentence
-- The timestamp should be the one that appears after the last word of the complete thought
+RULES FOR SEGMENTED CLIPS:
+- Only use when removing irrelevant/boring sections is essential
+- Never use segments shorter than 15 seconds
+- Do not cut during a continuous thought or mid-sentence
+- Calculate the TOTAL duration of ALL segments (must be between {min_duration} and {MAX_AUTO_DURATION} seconds)
 
-PROVIDE EXACTLY THIS FORMAT:
-[
-  {{
-    "start": <start_time_in_seconds>,
-    "end": <end_time_in_seconds>,
-    "content": "Brief description of clip content and why it's engaging"
-  }}
-]
+SELECTION CRITERIA:
+- Target complete thoughts with natural beginning and endings
+- Focus on content that works as a standalone clip
+- Prioritize surprising revelations, concise explanations, emotional moments
+- Do not cut mid-sentence or during important context
 
-FINAL VERIFICATION (MANDATORY):
-- Start/end times must be decimal numbers (e.g., 12.5, not "12:30")
-- Calculate the duration of each clip by subtracting start from end
-- Verify ALL clips are between {min_duration} and {MAX_AUTO_DURATION} seconds
-- Each clip should be as long as needed to capture the complete thought or narrative, but not exceeding the maximum limit'''
+YOUR RESPONSE MUST BE VALID JSON WITH THIS STRUCTURE:
+{{
+  "highlights": [
+    {{
+      "start": <start_time_in_seconds>,
+      "end": <end_time_in_seconds>,
+      "content": "Brief description of clip content"
+    }},
+    {{
+      "segments": [
+        {{ "start": <start_time_in_seconds>, "end": <end_time_in_seconds> }},
+        {{ "start": <start_time_in_seconds>, "end": <end_time_in_seconds> }}
+      ],
+      "content": "Brief description of segments"
+    }}
+  ]
+}}
+
+DURATION VALIDATION (MANDATORY):
+Before finalizing each highlight:
+1. Calculate duration = end_time - start_time
+2. For segmented clips, sum all segment durations
+3. VERIFY duration is between {min_duration} and {MAX_AUTO_DURATION} seconds
+4. If duration is invalid, adjust your timestamps until it is valid
+
+FINAL VERIFICATION CHECKLIST (MANDATORY):
+- Count your highlights: MUST BE EXACTLY {num_highlights}
+- Verify EVERY start/end time explicitly by calculating end - start = duration
+- Double-check ALL durations are between {min_duration} and {MAX_AUTO_DURATION} seconds
+- Use continuous clips whenever possible
+- Do not include any text outside the JSON structure
+- Do not include explanations - ONLY valid JSON'''
     else:
-        system_prompt = f'''You are an expert video editor specializing in creating engaging short-form content. Analyze this transcription (which includes timestamps) and identify the {num_highlights} most compelling segments for short clips.
+        system_prompt = f'''You are an expert video editor specializing in creating engaging short-form content. Analyze this transcription and identify EXACTLY {num_highlights} most compelling segments - no more, no less.
 
-THE MOST IMPORTANT REQUIREMENT (CRITICAL): Each clip MUST be EXACTLY between {min_duration} and {max_duration} seconds long. This is a hard requirement - clips shorter than {min_duration} seconds or longer than {max_duration} seconds will be rejected.
+CRITICAL REQUIREMENTS (MUST FOLLOW):
+1. Generate EXACTLY {num_highlights} highlights - not more, no less.
+2. STRICT DURATION ENFORCEMENT: Each highlight MUST be between {min_duration} and {max_duration} seconds - NEVER OUTSIDE THIS RANGE.
+3. TARGET DURATION: Aim for clips as close as possible to {max_duration} seconds.
+4. VERIFY ALL TIMESTAMPS: Calculate each duration as (end - start) and confirm it's within range.
 
-SELECTING SEGMENTS:
-- Look for moments that work well as standalone clips with clear beginnings and endings
-- Find segments that are AS CLOSE AS POSSIBLE to {max_duration} seconds long
-- Target complete thoughts or stories (don't cut mid-sentence)
-- Prioritize:
-  * Surprising revelations or "aha moments"
-  * Concise explanations of interesting concepts
-  * Emotional or humorous moments
-  * High-energy or dramatic segments
+YOU CAN CHOOSE BETWEEN TWO TYPES OF HIGHLIGHTS:
+1. CONTINUOUS CLIPS (PREFERRED): A single uninterrupted segment that captures a complete thought.
+2. SEGMENTED CLIPS (USE SPARINGLY): Only use if absolutely necessary to remove irrelevant content.
 
-TIMING INSTRUCTIONS (EXTREMELY IMPORTANT):
-- Calculate your start and end times carefully to ensure clips are within the {min_duration}-{max_duration} second range
-- DOUBLE-CHECK your start/end timestamps and verify each clip's duration before submitting
-- If a segment seems too short, EXTEND it to include contextually relevant content but don't make it too long
-- Choose natural break points at the beginning and end of segments
-- Aim to make clips as close to {max_duration} seconds as possible - longer clips (within the limit) are preferred
-- The ending time must correspond to the completion of a full thought or sentence
-- Always include complete sentences; never cut off mid-sentence
-- The timestamp should be the one that appears after the last word of the complete thought
+RULES FOR SEGMENTED CLIPS:
+- Only use when removing irrelevant/boring sections is essential
+- Never use segments shorter than 15 seconds
+- Do not cut during a continuous thought or mid-sentence
+- Calculate the TOTAL duration of ALL segments (must be between {min_duration} and {max_duration} seconds)
 
-PROVIDE EXACTLY THIS FORMAT:
-[
-  {{
-    "start": <start_time_in_seconds>,
-    "end": <end_time_in_seconds>,
-    "content": "Brief description of clip content and why it's engaging"
-  }}
-]
+SELECTION CRITERIA:
+- Target complete thoughts with natural beginning and endings
+- AIM FOR CLIPS AS CLOSE TO {max_duration} SECONDS AS POSSIBLE
+- Prioritize surprising revelations, concise explanations, emotional moments
+- Do not cut mid-sentence or during important context
 
-FINAL VERIFICATION (MANDATORY):
-- Start/end times must be decimal numbers (e.g., 12.5, not "12:30")
-- Calculate the duration of each clip by subtracting start from end
-- Verify ALL clips are between {min_duration} and {max_duration} seconds
-- If a clip is too short, extend it to include more context but dont make it too long that it exceeds {max_duration} seconds'''
+YOUR RESPONSE MUST BE VALID JSON WITH THIS STRUCTURE:
+{{
+  "highlights": [
+    {{
+      "start": <start_time_in_seconds>,
+      "end": <end_time_in_seconds>,
+      "content": "Brief description of clip content"
+    }},
+    {{
+      "segments": [
+        {{ "start": <start_time_in_seconds>, "end": <end_time_in_seconds> }},
+        {{ "start": <start_time_in_seconds>, "end": <end_time_in_seconds> }}
+      ],
+      "content": "Brief description of segments"
+    }}
+  ]
+}}
 
-    try:
-        print(transcription)
-        print(f"Running in {'AUTO mode with max duration of 120s' if is_auto_mode else f'FIXED mode with {max_duration}s clips'}")
-        
-        response = client.chat.completions.create(
-            model="gpt-4o-mini",
-            temperature=0.7,
-            messages=[
-                {"role": "system", "content": system_prompt},
-                {"role": "user", "content": transcription}
-            ]
-        )
+DURATION VALIDATION (MANDATORY):
+Before finalizing each highlight:
+1. Calculate duration = end_time - start_time
+2. For segmented clips, sum all segment durations
+3. VERIFY duration is between {min_duration} and {max_duration} seconds
+4. If duration is invalid, adjust your timestamps until it is valid
 
-        json_string = response.choices[0].message.content
-        highlights = extract_times(json_string, min_duration, max_duration, transcript_lines)
+EXAMPLES OF INVALID CLIPS (DO NOT DO THESE):
+- A clip with start=10, end=14 (duration: 4 seconds) - TOO SHORT
+- A clip with start=50, end=180 (duration: 130 seconds) - TOO LONG
 
-        # Verify we got the requested number of clips
-        if len(highlights) == 0:
-            print("No valid highlights extracted")
-            return []
-        elif len(highlights) < num_highlights:
-            print(f"Warning: Only found {len(highlights)} valid highlights")
+FINAL VERIFICATION CHECKLIST (MANDATORY):
+- Count your highlights: MUST BE EXACTLY {num_highlights}
+- MATHEMATICAL CHECK: Verify ALL durations by computing (end - start) for each clip
+- ENSURE ALL durations are between {min_duration} and {max_duration} seconds
+- Use continuous clips whenever possible
+- Do not include any text outside the JSON structure
+- Do not include explanations - ONLY valid JSON'''
 
-        return highlights
+    for attempt in range(max_retries):
+        try:
+            print(f"Running in {'AUTO mode with max duration of 120s' if is_auto_mode else f'FIXED mode with {max_duration}s clips'}")
+            print(f"Attempt {attempt + 1} of {max_retries}")
+            print(f"Requesting exactly {num_highlights} highlights")
+            
+            # Add a user message that explicitly asks for JSON format
+            user_message = transcription + f"\n\nIMPORTANT: Generate EXACTLY {num_highlights} clips as valid JSON only. No explanations."
+            
+            response = client.chat.completions.create(
+                model="gpt-4o-mini",
+                temperature=0.1,  # Lower temperature for more deterministic results
+                response_format={"type": "json_object"},  # Force JSON response format
+                messages=[
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_message}
+                ]
+            )
 
-    except Exception as e:
-        print(f"Error: {e}")
-        return []
+            json_string = response.choices[0].message.content
+            highlights = extract_times(json_string, min_duration, max_duration, transcript_lines)
+
+            # Verify we got the exact requested number of clips
+            if len(highlights) == 0:
+                print("No valid highlights extracted in this attempt")
+                # Wait before retry
+                time.sleep(2)
+                continue
+            elif len(highlights) != num_highlights:
+                print(f"Warning: Found {len(highlights)} highlights instead of the requested {num_highlights}")
+                # If this is the last retry attempt and we have at least some highlights, return them
+                if attempt == max_retries - 1 and len(highlights) > 0:
+                    print("Returning available highlights after all retry attempts")
+                    # If we have more highlights than requested, trim the list
+                    if len(highlights) > num_highlights:
+                        highlights = highlights[:num_highlights]
+                    return highlights
+                # Otherwise retry
+                time.sleep(2)
+                continue
+            else:
+                # Success! We got exactly the requested number of highlights
+                return highlights
+
+        except Exception as e:
+            print(f"Error in attempt {attempt + 1}: {e}")
+            time.sleep(2)  # Wait before retry
+    
+    # If we reach here, all attempts failed or we couldn't get exactly num_highlights
+    print("All attempts to extract the exact number of highlights failed")
+    return []

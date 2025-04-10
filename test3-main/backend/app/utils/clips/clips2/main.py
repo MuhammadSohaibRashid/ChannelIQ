@@ -62,7 +62,7 @@ def process_video(url, clip_length, clip_count, media_root):
                     final_videos = []
 
                     # Process each highlight
-                    for idx, (start, stop) in enumerate(highlights):
+                    for idx, highlight in enumerate(highlights):
                         # Generate output paths
                         processed = os.path.join(media_root, 'processed')
                         Temp = os.path.join(media_root, 'Temp')
@@ -70,7 +70,7 @@ def process_video(url, clip_length, clip_count, media_root):
                         os.makedirs(processed, exist_ok=True)
                         cropped_output = os.path.join(Temp, f"cropped_clip_{idx + 1}.mp4")
                         # Process video segments
-                        crop_video(Vid, cropped_output, start, stop)
+                        crop_video(Vid, cropped_output, highlight, idx)
                         combined_output = resize_video(cropped_output)
                         final_videos.append({
                             "clip_path": combined_output

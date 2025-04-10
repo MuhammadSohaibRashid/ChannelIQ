@@ -74,38 +74,13 @@ function Seo_shortform({ videoThumbnail }) {
   };
 
   // ✅ Save Video Details
-  const saveVideoDetailsToDB = async (user, videoTitle, description, tags, keywords, selectedFeatures) => {
-    if (!user) return console.error("❌ User not logged in.");
-    const extractedUserId = user?.uid;
-    if (!extractedUserId) return console.error("❌ No userId found.");
-    if (!videoTitle?.trim()) return console.error("❌ Error: videoTitle is empty.");
 
-    try {
-      const formattedVideoTitle = videoTitle.replace(/\s+/g, " ");
-      const videoRef = doc(db, "users", extractedUserId, "videos", formattedVideoTitle);
-      const videoData = {
-        videoTitle,
-        description: description || "No description available.",
-        tags: tags || [],
-        keywords: keywords || [],
-        processedVideoURL: getVideoUrl(),
-        originalVideoURL: selectedClip,
-        enhancementType: selectedFeatures.join(", "),
-        timestamp: serverTimestamp(),
-      };
-      await setDoc(videoRef, videoData, { merge: true });
-      console.log("✅ Video details saved.");
-    } catch (error) {
-      console.error("🔥 Error saving video details:", error);
-    }
-  };
 
   // ✅ Automatically Save Data
   useEffect(() => {
     if (videoTitle && videoTitle !== "No title available." && user) {
       const sanitizedTitle = videoTitle.trim();
       saveSEOToDB(user, sanitizedTitle, title, description, tags, keywords);
-      saveVideoDetailsToDB(user, sanitizedTitle, description, tags, keywords, selectedFeatures);
     }
   }, [videoTitle, title, description, tags, keywords, selectedClip, selectedFeatures, user]);
 
@@ -293,16 +268,11 @@ function Seo_shortform({ videoThumbnail }) {
       // Create form data for file upload
       const formData = new FormData();
       
-      // We have two options:
-      // 1. If it's an S3 URL, we'll let the backend download it
-      // 2. If it's a local URL, we might need to fetch and upload the file
-      
       formData.append('video_url', videoUrl);
       formData.append('title', results?.seo?.title || "My Video");
       formData.append('description', results?.seo?.description || "");
       formData.append('tags', results?.seo?.hashtags?.join(",") || "");
       
-      // If we have an S3 key, include it for the backend to use
       if (selectedClip?.key) {
         formData.append('s3_key', selectedClip.key);
       }
@@ -314,16 +284,26 @@ function Seo_shortform({ videoThumbnail }) {
         method: "POST",
         headers: {
           Authorization: `Token ${authToken}`
-          // Don't set Content-Type when using FormData - browser will set it with boundary
         },
         body: formData,
       });
       
+      const data = await uploadResponse.json();
+      
+      // Check if we need to re-authorize YouTube
       if (!uploadResponse.ok) {
+        if (uploadResponse.status === 401 && data.needs_auth) {
+          // YouTube auth needs renewal
+          setHasYoutubeAuth(false);
+          setUploadStatus({
+            success: false,
+            message: data.detail || "Your YouTube authorization has expired. Please reconnect your YouTube account.",
+            needsAuth: true
+          });
+          return;
+        }
         throw new Error(`Upload failed with status: ${uploadResponse.status} ${uploadResponse.statusText}`);
       }
-      
-      const data = await uploadResponse.json();
       
       if (data.success) {
         setUploadStatus({

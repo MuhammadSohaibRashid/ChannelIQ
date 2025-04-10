@@ -1,111 +1,222 @@
 import React, { useContext, useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import { doc, getDoc } from "firebase/firestore";
-import { db } from "../Firebase";  // ✅ Import Firebase Firestore
-import "./HomePage.css";
-import homepageImage from "./homepage.png";
-import { UserContext } from "./UserContext"; // Import global User Context
+import { db } from "../Firebase";
+import { UserContext } from "./UserContext";
+import Clipper from './clipper'; // Import the Clipper component
+import './HomePage.css'; // Ensure your CSS file is imported
+
 
 const HomePage = () => {
-  const { user, logout, login } = useContext(UserContext); // Access global user state
+  const { user, logout, login } = useContext(UserContext);
   const navigate = useNavigate();
-  const [loadingUser, setLoadingUser] = useState(true); // ✅ Loading state for Firestore
-
-  // Refs for animation elements
+  const [loadingUser, setLoadingUser] = useState(true);
+  const [scrollLocked, setScrollLocked] = useState(true);
   const titleRef = useRef(null);
   const subtitleRef = useRef(null);
   const previewRef = useRef(null);
   const buttonRef = useRef(null);
-
-  // ✅ Fetch user data from Firestore if not available in context
+  // Fetch user from Firestore or localStorage
   useEffect(() => {
     const fetchUserFromFirestore = async () => {
       if (user) {
         setLoadingUser(false);
-        return; // If user is already in context, skip Firestore fetch
+        return;
       }
 
-      const storedUser = JSON.parse(localStorage.getItem("user"));
+      let storedUser = null;
+      try {
+        storedUser = JSON.parse(localStorage.getItem("user"));
+      } catch (e) {
+        console.warn("Invalid user data in localStorage");
+      }
+
       if (storedUser?.uid) {
         try {
           const userDoc = await getDoc(doc(db, "users", storedUser.uid));
           if (userDoc.exists()) {
             console.log("User Data from Firestore:", userDoc.data());
-            login(userDoc.data()); // ✅ Update global context
+            login(userDoc.data());
           }
         } catch (error) {
           console.error("Error fetching user data from Firestore:", error);
         }
       }
+
       setLoadingUser(false);
     };
 
     fetchUserFromFirestore();
   }, [user, login]);
-
-  // ✅ Add animations when component mounts
+  useEffect(() => {
+  const videoElement = document.querySelector('.preview__video');
+  if (videoElement) {
+    videoElement.load();
+  }
+}, []);
+  // Animate elements on mount
   useEffect(() => {
     const elements = [titleRef, subtitleRef, previewRef, buttonRef];
     elements.forEach((ref, index) => {
       if (ref.current) {
         setTimeout(() => {
           ref.current.classList.add("animate-in");
-        }, index * 200); // Stagger animations by 200ms
+        }, index * 200);
       }
     });
   }, []);
+  
+
+  // Text animation effect
+  useEffect(() => {
+    const animateElements = () => {
+      const elements = [
+        titleRef.current,
+        subtitleRef.current,
+        previewRef.current,
+        buttonRef.current
+      ];
+      
+      elements.forEach((el, index) => {
+        if (el) {
+          setTimeout(() => {
+            el.style.opacity = 1;
+            el.style.transform = 'translateY(0)';
+          }, index * 200);
+        }
+      });
+    };
+
+    setTimeout(animateElements, 300);
+  }, []);
+  // Update the useEffect to actually use the scrollLocked value
+// Update your scroll lock useEffect hook to this:
+useEffect(() => {
+  const handleScroll = (e) => {
+    if (scrollLocked) {
+      e.preventDefault();
+      e.stopPropagation();
+      window.scrollTo(0, 0);
+    }
+  };
+
+  if (scrollLocked) {
+    window.scrollTo(0, 0);
+    // Use { passive: false } to ensure preventDefault works
+    window.addEventListener('wheel', handleScroll, { passive: false });
+    window.addEventListener('touchmove', handleScroll, { passive: false });
+    document.body.classList.add('scroll-lock');
+  }
+
+  return () => {
+    window.removeEventListener('wheel', handleScroll);
+    window.removeEventListener('touchmove', handleScroll);
+    document.body.classList.remove('scroll-lock');
+  };
+}, [scrollLocked]);
+
+  const scrollToClipper = () => {
+    setScrollLocked(false);
+    const clipperSection = document.querySelector('.clipper-section');
+    if (clipperSection) {
+      clipperSection.scrollIntoView({ behavior: 'smooth' });
+    }
+  };
 
   return (
     <div className="home">
-      {/* Navbar */}
-      <header className="header">
-        <div className="header__logo" onClick={() => navigate("/")}>
-          Channel-<span className="header__logo-highlight">IQ</span>
-        </div>
+      {/* Background Logo */}
+      <div className="watermark-logo">Channel<span>IQ</span></div>
 
-        {/* Show user profile if logged in, otherwise show login button */}
-        {loadingUser ? (
-          <p className="loading-text">Loading user...</p>
-        ) : user ? (
-          <div className="user">
-            {user.picture && <img src={user.picture} alt="User" className="user__avatar" />}
-            <span className="user__name">{user.name}</span>
-            <button className="user__logout-btn" onClick={logout}>
-              Logout
-            </button>
-          </div>
-        ) : (
-          <button className="user__login-btn" onClick={() => navigate("/login")}>
-            Login
-          </button>
-        )}
-      </header>
+      {/* Header */}
+      <header className="dashboard-header">
+                <div className="logo-container" onClick={() => navigate("/")}>
+                    <h1 className="logo">
+                        <span className="logo-bold">Channel-</span>
+                        <span className="logo-highlight">IQ</span>
+                    </h1>
+                </div>
+
+                <div className="header-right">
+                    {user ? (
+                        <div className="user-profile">
+                            <img src={user.picture} alt="User" className="user-avatar" />
+                            <span className="username">{user.name}</span>
+                            <button className="logout-button" onClick={logout}>Logout</button>
+                        </div>
+                    ) : (
+                        <button className="login-button" onClick={() => navigate("/login")}>
+                            Login
+                        </button>
+                    )}
+                </div>
+            </header>
+
 
       {/* Hero Section */}
-      <main className="hero">
+      <div className="hero">
         <h1 className="hero__title" ref={titleRef}>
-          Clip your long video in <span className="hero__title-highlight">one</span>{" "}
-          <span className="hero__title-click">click.</span>
+          Your All-in-One AI Tool to Instantly Boost <br />
+          <span className="hero__title-highlight">Quality, SEO & YouTube Dominance</span>
         </h1>
 
         <p className="hero__subtitle" ref={subtitleRef}>
-          <span className="hero__sparkle">✨</span> Meet Clipper, a multi-modal AI that can clip any type of video.
+          All-powered editing suite for professional creators
         </p>
 
-        {/* Image Preview Section */}
-        <div className="preview" ref={previewRef}>
-          <div className="preview__shadow"></div>
-          <img src={homepageImage} alt="Video clipping preview" className="preview__image" />
+        {/* Features Grid */}
+        <div className="features-grid">
+          <div className="feature-badge">
+            <span className="feature-icon-homepage">✂️</span>
+            <span>Smart Clipping</span>
+          </div>
+          <div className="feature-badge">
+            <span className="feature-icon-homepage">📝</span>
+            <span>Auto Captions</span>
+          </div>
+          <div className="feature-badge">
+            <span className="feature-icon-homepage">🔇</span>
+            <span>Noise Removal</span>
+          </div>
+          <div className="feature-badge">
+            <span className="feature-icon-homepage">🖼️</span>
+            <span>4K Upscaling</span>
+          </div>
+          <div className="feature-badge">
+            <span className="feature-icon-homepage">🔍</span>
+            <span>SEO Optimization</span>
+          </div>
         </div>
 
-        {/* "Get Clips" Button */}
+        {/* Video Preview */}
+        <div className="preview" ref={previewRef}>
+  <video 
+    className="preview__video" 
+    autoPlay 
+    loop 
+    muted 
+    playsInline
+    onLoadedData={() => console.log("Video loaded successfully")}
+    onError={(e) => console.error("Video error:", e.target.error)}
+  >
+    <source src="/videos/test.mp4" type="video/mp4" />
+    <p>Your browser does not support video playback.</p>
+  </video>
+</div>
+
+        {/* CTA Button */}
         <div className="cta" ref={buttonRef}>
-          <button className="cta__button" onClick={() => navigate("/clipper")}>
-            Get Clips
+          <button className="cta__button" onClick={scrollToClipper}>
+            Get Started
           </button>
           <div className="cta__glow"></div>
         </div>
-      </main>
+      </div>
+
+      {/* Clipper Section */}
+      <div className="clipper-section">
+        <Clipper />
+      </div>
     </div>
   );
 };

@@ -13,7 +13,9 @@ import Comparison from './components/comparsion';
 import LoginPage from './components/LoginPage';
 import YouTubeAuthCallback from './components/YouTubeAuthCallback';
 import { UserProvider, UserContext } from "./components/UserContext";
-
+import Dashboard from './components/Dashboard';
+import VideoDashboard from "./components/videoDashboard";
+import VideoDetails from "./components/videoDetails";
 // ✅ Create Protected Route Component
 const PrivateRoute = ({ element }) => {
   const { user } = useContext(UserContext);
@@ -46,8 +48,10 @@ const App = () => {
             <Route path="/optimizevideo" element={<PrivateRoute element={<OptimizeVideo videoUrl={videoUrl} selectedFeatures={selectedFeatures} />} />} />
             <Route path="/optimizevideo_shortform" element={<PrivateRoute element={<Optimizevideo_shortform videoUrl={videoUrl} selectedFeatures={selectedFeatures} />} />} />
             <Route path="/seo_shortform" element={<PrivateRoute element={<Seo_shortform videoId={videoId} videoThumbnail={videoThumbnail} />} />} />
+            <Route path="/dashboard" element={<Dashboard />} />
             <Route path="/comparison" element={<PrivateRoute element={<Comparison />} />} />
-            
+            <Route path="/video/:userId/:videoId" element={<VideoDetails />} />
+            <Route path="/dashboard" element={<VideoDashboard />} />
             {/* ✅ Handle 404 */}
             <Route path="*" element={<h2>Page Not Found</h2>} />
           </Routes>

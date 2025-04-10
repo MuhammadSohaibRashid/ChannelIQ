@@ -39,7 +39,6 @@ django-allauth
 cryptography
 python-magic-bin
 pyannote.audio
-whisperx
 google_auth_oauthlib
 deep_translator
 firebase-admin  
