@@ -47,14 +47,14 @@ function Clipper() {
         }
     
         // Ensure videoTitle is a valid Firestore document ID
-        const formattedVideoTitle = videoTitle.replace(/\s+/g, " ");
+        const formattedVideoTitle = videoTitle.replace(/[^\w\s-]/gi, "").trim();
     
         try {
             // 🔹 Reference to user's video document inside "videos" collection
-            const videoRef = doc(db, "users", user.uid, "videos", videoTitle);
+            const videoRef = doc(db, "users", user.uid, "videos", formattedVideoTitle);
     
             // 🔹 Reference to "fetchedVideos" subcollection inside that document
-            const fetchRef = doc(db, "users", user.uid, "videos", videoTitle, "fetchedVideos", "metadata");
+            const fetchRef = doc(db, "users", user.uid, "videos", formattedVideoTitle, "fetchedVideos", "metadata");
     
             // 🔹 Save main details in "videos" collection (as a document)
             await setDoc(videoRef, {
@@ -83,59 +83,6 @@ function Clipper() {
             console.error("🔥 Error saving original video to Firestore:", error);
         }
     };
-    
-    
-    
-    
-    
-    
-    
-    
-    const updateProcessingInDB = async (
-        userId,
-        videoTitle,
-        formType,
-        selectedFeatures,
-        processedURL = null,
-        seoData = null,
-        response = null // 🟢 Add response parameter
-    ) => {
-        try {
-            if (!userId || !videoTitle) {
-                throw new Error("Invalid userId or videoTitle provided.");
-            }
-    
-            console.log(`📌 Updating Firestore: users/${userId}/videos/${videoTitle}/generate/${formType}`);
-    
-            const videoRef = doc(db, "users", userId, "videos", videoTitle);
-            await setDoc(videoRef, { createdAt: serverTimestamp() }, { merge: true });
-    
-            const generateVidRef = doc(db, "users", userId, "videos", videoTitle, "generate", formType);
-    
-            let updateData = {
-                selectedFeatures: selectedFeatures || [],
-                status: response?.status === 200 ? "Success" : "Processing", // ✅ Use response safely
-                timestamp: serverTimestamp(),
-            };
-    
-            if (processedURL) {
-                updateData.processedURL = processedURL;
-            }
-    
-            if (seoData && formType === "LongForm") {
-                updateData.seo = seoData;
-            }
-    
-            console.log("🚀 Data being saved:", updateData);
-    
-            await setDoc(generateVidRef, updateData, { merge: true });
-    
-            console.log(`✅ Updated successfully inside 'videos/${videoTitle}/generate/${formType}'`);
-        } catch (error) {
-            console.error("🔥 Firestore update error:", error.message);
-        }
-    };
-    
     
     const handleFetch = async () => {
       setLoading(true);
@@ -196,38 +143,59 @@ function Clipper() {
     
         // 2. Video Download & Upload Errors
         let downloadResponse;
-        try {
-          downloadResponse = await downloadAndUploadVideo(videoURL);
-          
-          if (!downloadResponse?.url || !downloadResponse?.local_path) {
-            throw new Error("Invalid download response");
-          }
-        } catch (downloadError) {
-          console.error("Download/Upload Error:", downloadError);
-          let errorMessage = "❌ Failed to process video. ";
-          
-          if (downloadError.response) {
-            // Handle storage service errors
-            if (downloadError.response.status === 413) {
-              errorMessage += "Video file is too large.";
-            } else if (downloadError.response.status === 502) {
-              errorMessage += "Storage service unavailable.";
-            } else {
-              errorMessage += `Storage error (${downloadError.response.status}).`;
-            }
-          } else if (downloadError.message.includes("network")) {
-            errorMessage += "Network connection failed during download.";
-          } else if (downloadError.message.includes("storage quota")) {
-            errorMessage += "Storage quota exceeded.";
-          } else {
-            errorMessage += "Please try a different video.";
-          }
+        // In the Download & Upload Errors section of handleFetch function
+try {
+  downloadResponse = await downloadAndUploadVideo(videoURL);
+  
+  if (!downloadResponse?.url || !downloadResponse?.local_path) {
+    throw new Error("Invalid download response");
+  }
+} catch (downloadError) {
+  console.error("Download/Upload Error:", downloadError);
+  let errorMessage = "❌ Failed to process video. ";
+  
+  if (downloadError.response && downloadError.response.data) {
+    // Check for specific error codes from our backend
+    const errorCode = downloadError.response.data.error;
+    const errorMsg = downloadError.response.data.message;
     
-          setError(errorMessage);
-          setLoading(false);
-          setIsProcessingVideo(false);
-          return;
-        }
+    if (errorCode === "VIDEO_TOO_SHORT") {
+      setError("❌ " + errorMsg + ". Please use a video longer than 5 minutes.");
+      setLoading(false);
+      setIsProcessingVideo(false);
+      return;
+    } 
+    else if (errorCode === "VIDEO_TOO_LONG") {
+      setError("❌ " + errorMsg + ". Please use a video shorter than 1 hour.");
+      setLoading(false);
+      setIsProcessingVideo(false);
+      return;
+    }
+    // Other specific error codes can be handled here
+    else if (downloadError.response.status === 400) {
+      errorMessage += errorMsg || "Invalid request parameters.";
+    }
+    // Handle storage service errors
+    else if (downloadError.response.status === 413) {
+      errorMessage += "Video file is too large.";
+    } else if (downloadError.response.status === 502) {
+      errorMessage += "Storage service unavailable.";
+    } else {
+      errorMessage += `Server error (${downloadError.response.status}).`;
+    }
+  } else if (downloadError.message.includes("network")) {
+    errorMessage += "Network connection failed during download.";
+  } else if (downloadError.message.includes("storage quota")) {
+    errorMessage += "Storage quota exceeded.";
+  } else {
+    errorMessage += "Please try a different video.";
+  }
+
+  setError(errorMessage);
+  setLoading(false);
+  setIsProcessingVideo(false);
+  return;
+}
     
         const { url: s3Url, local_path: localPath } = downloadResponse;
     
@@ -272,8 +240,7 @@ function Clipper() {
             "http://127.0.0.1:8000/api/check-resolution/",
             { video_path: localPath },
             { 
-              headers: { "Content-Type": "application/json" },
-              timeout: 2000000 // 10 second timeout
+              headers: { "Content-Type": "application/json" }
             }
           );
           
@@ -362,7 +329,7 @@ function Clipper() {
           if (!csrfToken) {
               console.warn("⚠️ CSRF token not found. This might cause API request issues.");
           }
-          let sanitizedTitle = videoData.title.replace(/\s+/g, " ");
+          let sanitizedTitle = videoData.title.replace(/[^\w\s-]/gi, "").trim();
   
           const videoId = uuidv4();
           const payload = {
@@ -673,32 +640,41 @@ function Clipper() {
                 </h1>
               </div>
       
-              {/* URL Input */}
               <div className="url-input-container">
-                <input
-                  type="text"
-                  placeholder="https://www.youtube.com/watch?v=jNQXAC9IVRw"
-                  value={videoURL}
-                  onChange={(e) => setVideoURL(e.target.value)}
-                  className="input"
-                  disabled={loading || isProcessingVideo}
-                />
-                <button
-                  onClick={handleFetch}
-                  disabled={loading || isProcessingVideo || !videoURL}
-                  className="fetch-btn"
-                >
-                  {loading ? (
-                    <span className="loading-spinner">
-                      <span className="spinner-dot"></span>
-                      <span className="spinner-dot"></span>
-                      <span className="spinner-dot"></span>
-                    </span>
-                  ) : (
-                    "Fetch"
-                  )}
-                </button>
-              </div>
+  <input
+    type="text"
+    placeholder="https://www.youtube.com/watch?v=jNQXAC9IVRw"
+    value={videoURL}
+    onChange={(e) => setVideoURL(e.target.value)}
+    className="input"
+    disabled={loading || isProcessingVideo}
+  />
+  <button
+    onClick={handleFetch}
+    disabled={loading || isProcessingVideo || !videoURL}
+    className="fetch-btn"
+  >
+    {loading ? (
+      <span className="loading-spinner">
+        <span className="spinner-dot"></span>
+        <span className="spinner-dot"></span>
+        <span className="spinner-dot"></span>
+      </span>
+    ) : (
+      "Fetch"
+    )}
+  </button>
+</div>
+
+{/* Error Message Display */}
+{error && (
+  <div className="error-notification">
+    <div className="error-message">
+      {error}
+      <button className="close-error" onClick={() => setError(null)}>×</button>
+    </div>
+  </div>
+)}
       
               {/* Processing Overlay */}
               {isProcessingVideo && !videoData && (

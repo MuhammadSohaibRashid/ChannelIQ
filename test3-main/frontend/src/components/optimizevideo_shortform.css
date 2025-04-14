@@ -158,3 +158,12 @@
   border-radius: 8px;
   width: 100%;
 }
+
+/* Add this to your optimizevideo.css file */
+
+.action-buttons {
+  display: flex;
+  gap: 15px;
+  justify-content: center;
+  margin-top: 1.5rem;
+}

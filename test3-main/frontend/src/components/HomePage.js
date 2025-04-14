@@ -6,7 +6,6 @@ import { UserContext } from "./UserContext";
 import Clipper from './clipper'; // Import the Clipper component
 import './HomePage.css'; // Ensure your CSS file is imported
 
-
 const HomePage = () => {
   const { user, logout, login } = useContext(UserContext);
   const navigate = useNavigate();
@@ -16,6 +15,7 @@ const HomePage = () => {
   const subtitleRef = useRef(null);
   const previewRef = useRef(null);
   const buttonRef = useRef(null);
+
   // Fetch user from Firestore or localStorage
   useEffect(() => {
     const fetchUserFromFirestore = async () => {
@@ -48,12 +48,7 @@ const HomePage = () => {
 
     fetchUserFromFirestore();
   }, [user, login]);
-  useEffect(() => {
-  const videoElement = document.querySelector('.preview__video');
-  if (videoElement) {
-    videoElement.load();
-  }
-}, []);
+
   // Animate elements on mount
   useEffect(() => {
     const elements = [titleRef, subtitleRef, previewRef, buttonRef];
@@ -126,8 +121,8 @@ useEffect(() => {
   return (
     <div className="home">
       {/* Background Logo */}
-      <div className="watermark-logo">Channel<span>IQ</span></div>
 
+      {/* Navbar */}
       {/* Header */}
       <header className="dashboard-header">
                 <div className="logo-container" onClick={() => navigate("/")}>
@@ -152,7 +147,6 @@ useEffect(() => {
                 </div>
             </header>
 
-
       {/* Hero Section */}
       <div className="hero">
         <h1 className="hero__title" ref={titleRef}>
@@ -165,31 +159,32 @@ useEffect(() => {
         </p>
 
         {/* Features Grid */}
-        <div className="features-grid">
-          <div className="feature-badge">
-            <span className="feature-icon-homepage">✂️</span>
-            <span>Smart Clipping</span>
-          </div>
-          <div className="feature-badge">
-            <span className="feature-icon-homepage">📝</span>
-            <span>Auto Captions</span>
-          </div>
-          <div className="feature-badge">
-            <span className="feature-icon-homepage">🔇</span>
-            <span>Noise Removal</span>
-          </div>
-          <div className="feature-badge">
-            <span className="feature-icon-homepage">🖼️</span>
-            <span>4K Upscaling</span>
-          </div>
-          <div className="feature-badge">
-            <span className="feature-icon-homepage">🔍</span>
-            <span>SEO Optimization</span>
-          </div>
-        </div>
+        {/* Features Grid */}
+<div className="features-grid">
+  <div className="feature-badge">
+    <span className="feature-icon-homepage-icon">✂️</span>
+    <span>Smart Clipping</span>
+  </div>
+  <div className="feature-badge">
+    <span className="feature-icon-homepage-icon">📝</span>
+    <span>Auto Captions</span>
+  </div>
+  <div className="feature-badge">
+    <span className="feature-icon-homepage-icon">🔇</span>
+    <span>Noise Removal</span>
+  </div>
+  <div className="feature-badge">
+    <span className="feature-icon-homepage-icon">🖼️</span>
+    <span>4K Upscaling</span>
+  </div>
+  <div className="feature-badge">
+    <span className="feature-icon-homepage-icon">🔍</span>
+    <span>SEO Optimization</span>
+  </div>
+</div>
 
-        {/* Video Preview */}
-        <div className="preview" ref={previewRef}>
+       {/* Video Preview with enhanced size */}
+       <div className="preview" ref={previewRef}>
   <video 
     className="preview__video" 
     autoPlay 

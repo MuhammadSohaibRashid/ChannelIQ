@@ -55,63 +55,134 @@ function SEO({ videoThumbnail }) {
   };
 
   // ✅ Firebase function to save SEO data
-  const saveSEOToDB = async (user, videoTitle, title, description, tags, keywords) => {
+  const saveDataToDB = async (user, locationState) => {
     if (!user) {
-        console.error("❌ User not logged in. Cannot save SEO data.");
-        return;
+      console.error("❌ User not logged in. Cannot save data.");
+      return;
     }
-
+  
     const extractedUserId = user?.uid;
     if (!extractedUserId) {
-        console.error("❌ No userId found.");
-        return;
+      console.error("❌ No userId found.");
+      return;
     }
-
+  
+    // Extract data from location state
+    const {
+      videoTitle,
+      selectedFeatures = [],
+      results = {}
+    } = locationState || {};
+  
     // ✅ Step 1: Sanitize the video title
     let sanitizedTitle = videoTitle
-        ? videoTitle.replace(/[^\w\s]/gi, "").trim()
-        : `video_${Date.now()}`;
-
+      ? videoTitle.replace(/[^\w\s-]/gi, "").trim()
+      : `video_${Date.now()}`;
+  
     if (!sanitizedTitle || sanitizedTitle.trim() === "") {
-        console.error("❌ Error: Sanitized video title is empty.");
-        return;
+      console.error("❌ Error: Sanitized video title is empty.");
+      return;
     }
-
+  
     try {
-        // ✅ Step 2: Firestore Path to store in 'LongForm'
-        const longFormRef = doc(db, "users", extractedUserId, "videos", sanitizedTitle, "generate", "LongForm");
-
-        // ✅ Step 3: Ensure `tags` and `keywords` are always arrays before joining
-        const formattedTags = Array.isArray(tags) && tags.length > 0 ? tags.join(", ") : "No tags available.";
-        const formattedKeywords = Array.isArray(keywords) && keywords.length > 0 ? keywords.join(", ") : "No keywords available.";
-
-        // ✅ Step 4: Store all SEO details under a single "seo" field
-        const seoData = {
-            title: title || "Untitled",
-            description: description || "No description available.",
-            tags: formattedTags,
-            keywords: formattedKeywords,
-            timestamp: serverTimestamp(), // Firestore timestamp
+      // ✅ Step 2: Firestore Path to store in 'LongForm'
+      const longFormRef = doc(db, "users", extractedUserId, "videos", sanitizedTitle, "generate", "LongForm");
+  
+      // Create an object to hold all data we want to save
+      const dataToSave = {
+        timestamp: serverTimestamp()
+      };
+  
+      // ✅ Step 3: If SEO is one of the selected features, add SEO data
+      if (selectedFeatures.includes('SEO') && results.seo) {
+        const { title, description, tags, keywords } = results.seo;
+  
+        // Format tags and keywords if they exist
+        const formattedTags = Array.isArray(tags) && tags.length > 0
+          ? tags.join(", ")
+          : "No tags available.";
+  
+        const formattedKeywords = Array.isArray(keywords) && keywords.length > 0
+          ? keywords.join(", ")
+          : "No keywords available.";
+  
+        // Add SEO data to save object
+        dataToSave.seo = {
+          title: title || "Untitled",
+          description: description || "No description available.",
+          tags: formattedTags,
+          keywords: formattedKeywords
         };
-
-        console.log("📂 Firestore Path:", longFormRef.path);
-        console.log("🔍 Debug: Saving SEO Data:", JSON.stringify(seoData, null, 2));
-
-        // ✅ Step 5: Save SEO Data to Firestore under "seo" field
-        await setDoc(longFormRef, { seo: seoData }, { merge: true });
-
-        console.log("✅ SEO details successfully saved inside LongForm subcollection.");
+  
+        console.log("🔍 Debug: Saving SEO Data:", JSON.stringify(dataToSave.seo, null, 2));
+      }
+  
+      // ✅ Step 4: Save video processing data inside OptimizedVideo if available
+      const optimizedVideoData = {};
+  
+      // Save audio processing data if available
+      if (results.audio_processing) {
+        optimizedVideoData.audio_processing = results.audio_processing;
+        console.log("🔍 Debug: Saving Audio Processing Data:", JSON.stringify(results.audio_processing, null, 2));
+      }
+      
+      // Add video upscaling data if available
+      if (results.video_upscaling) {
+        optimizedVideoData.video_upscaling = results.video_upscaling;
+        console.log("🔍 Debug: Saving Video Upscaling Data:", JSON.stringify(results.video_upscaling, null, 2));
+      }
+  
+      if (results.s3_upload) {
+        optimizedVideoData.s3 = results.s3_upload;
+        console.log("🔍 Debug: Saving S3 Upload Data:", JSON.stringify(results.s3_upload, null, 2));
+      }
+  
+      if (results.email_notification) {
+        optimizedVideoData.email_notification = results.email_notification;
+        console.log("🔍 Debug: Saving Email Notification Data:", JSON.stringify(results.email_notification, null, 2));
+      }
+  
+      if (Object.keys(optimizedVideoData).length > 0) {
+        dataToSave.OptimizedVid = optimizedVideoData;
+      }
+  
+      // Save selected features
+      if (selectedFeatures && selectedFeatures.length > 0) {
+        dataToSave.selectedFeatures = selectedFeatures;
+        console.log("🔍 Debug: Saving Selected Features:", JSON.stringify(dataToSave.selectedFeatures, null, 2));
+      }
+  
+      console.log("📂 Firestore Path:", longFormRef.path);
+      console.log("🔍 Debug: Saving Complete Data:", JSON.stringify(dataToSave, null, 2));
+  
+      // ✅ Step 5: Save all data to Firestore
+      await setDoc(longFormRef, dataToSave);
+  
+      console.log("✅ All details successfully saved inside LongForm subcollection.");
     } catch (error) {
-        console.error("🔥 Error saving SEO data:", error);
+      console.error("🔥 Error saving data:", error);
     }
   };
-
-  // ✅ Automatically Save SEO Data when Component Loads
+  
+  // ✅ Automatically Save Data when Component Loads
   useEffect(() => {
-    if (user && videoTitle && title && description && (Array.isArray(seoData.tags) || tags)) {
-      saveSEOToDB(user, videoTitle, title, description, seoData.tags || tags, seoData.keywords || keywords);
+    if (user && location.state) {
+      // Pass the entire location.state object to our save function
+      saveDataToDB(user, location.state);
     }
-  }, [user, videoTitle, title, description, tags, keywords, seoData.tags, seoData.keywords]);
+  }, [user, location.state]);
+
+  
+   // Handle copy functionality for SEO data
+   const handleCopy = (text) => {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        alert("Copied to clipboard!");
+      })
+      .catch(err => {
+        console.error('Failed to copy text: ', err);
+      });
+  };
 
   // Check for YouTube authorization on component mount
   useEffect(() => {
@@ -394,11 +465,8 @@ function SEO({ videoThumbnail }) {
           message: "Video SEO updated successfully!"
         });
         
-        // ✅ After successful YouTube update, also save to Firebase
-        if (videoTitle) {
-          await saveSEOToDB(user, videoTitle, seoData.title || title, seoData.description || description, 
-                           seoData.tags || tags, seoData.keywords || keywords);
-        }
+        // ✅ After successful YouTube update, update component state
+        setSeoMessage("SEO data updated successfully on YouTube!");
       } else {
         setUploadStatus({
           success: false,
@@ -419,97 +487,117 @@ function SEO({ videoThumbnail }) {
   return (
     <div className="seo-app">
       {/* Navbar with User Session */}
-      <header className="header">
-        <h1 className="logo" onClick={() => navigate("/")}>
-          <span className="bold">Channel-</span>
-          <span className="highlight">IQ</span>
-        </h1>
+       {/* Header */}
+       <header className="dashboard-header">
+                <div className="logo-container" onClick={() => navigate("/")}>
+                    <h1 className="logo">
+                        <span className="logo-bold">Channel-</span>
+                        <span className="logo-highlight">IQ</span>
+                    </h1>
+                </div>
 
-        <nav className="nav">
-          {user ? (
-            <div className="user-info">
-              <img src={user.picture} alt="User" className="user-avatar" />
-              <span className="username">{user.name}</span>
-              <button className="logout-btn" onClick={logout}>Logout</button>
-            </div>
-          ) : (
-            <button className="login-btn" onClick={() => navigate("/login")}>
-              Login
-            </button>
-          )}
-          <button className="home-button" onClick={() => navigate("/clipper")}>
-            Back to Clipper
-          </button>
-        </nav>
-      </header>
+                <div className="header-right">
+                    {user ? (
+                        <div className="user-profile">
+                            <img src={user.picture} alt="User" className="user-avatar" />
+                            <span className="username">{user.name}</span>
+                            <button className="logout-button" onClick={logout}>Logout</button>
+                        </div>
+                    ) : (
+                        <button className="login-button" onClick={() => navigate("/login")}>
+                            Login
+                        </button>
+                    )}
+                </div>
+            </header>
 
       <main className="main-content">
-        <button className="clipper-btn" onClick={() => navigate("/clipper")}>
-          Go to Clipper
-        </button>
-
+       
         <div className="clip-section">
-          <div className="media-preview">
-            {displayVideo ? (
-              <video src={displayVideo} controls className="preview-video" alt="Video Preview" />
-            ) : (
-              <img src={thumbnail} alt="Video Thumbnail" className="preview-image" />
-            )}
-          </div>
+          
+            
+          
 
           <div className="customize-clip">
+          <h3 className="seo-label">SEO Details</h3>
             <div className="seo-data">
-              <div className="seo-box">
-                <h2>Keywords</h2>
-                <p>{keywords}</p>
+            <div className="seo-box">
+                <h2>Title</h2>
+                <button className="copy-btn" onClick={() => handleCopy(title)}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+                <p>{title}</p>
               </div>
               <div className="seo-box">
                 <h2>Description</h2>
+                <button className="copy-btn" onClick={() => handleCopy(description)}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
                 <div className="description-text">
                   {formatWithLineBreaks(description)}
                 </div>
               </div>
               <div className="seo-box">
-                <h2>Title</h2>
-                <p>{title}</p>
+                <h2>Keywords</h2>
+                <button className="copy-btn" onClick={() => handleCopy(keywords)}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+                <p>{keywords}</p>
               </div>
               <div className="seo-box">
                 <h2>Tags</h2>
+                <button className="copy-btn" onClick={() => handleCopy(tags)}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
                 <p>{tags}</p>
               </div>
             </div>
 
             <div className="action-buttons">
               {/* Compare Results Button */}
-              <button
-                className="comparison-btn"
-                onClick={() =>
-                  navigate("/comparison", {
-                    state: {
-                      results,
-                      selectedFeatures,
-                      videoURL,
-                      localVideoPath,
-                      seoData: {
-                        ...seoData,
-                        original_title: seoData.original_title || title,
-                        original_description: seoData.original_description || description,
-                        original_tags: seoData.original_tags || seoData.tags,
-                        original_keywords: seoData.original_keywords || seoData.keywords,
-                      },
-                    },
-                  })
-                }
-              >
-                Compare Results
-              </button>
+                        <button
+            className="comparison-btn-seo"
+            onClick={() =>
+              navigate("/comparison", {
+                state: {
+                  results,
+                  selectedFeatures,
+                  videoURL,
+                  localVideoPath,
+                  s3Key: results.s3_upload?.key || null, // Add S3 key
+                  processedS3Url: getVideoUrl(), // Get the current video URL
+                  seoData: {
+                    ...seoData,
+                    original_title: seoData.original_title || title,
+                    original_description: seoData.original_description || description,
+                    original_tags: seoData.original_tags || seoData.tags,
+                    original_keywords: seoData.original_keywords || seoData.keywords,
+                  },
+                },
+              })
+            }
+          >
+            Compare Results
+          </button>
 
               {/* YouTube Update SEO Button */}
               {videoURL && videoURL.includes("youtube.com") && (
                 <>
                   {user && !hasYoutubeAuth ? (
                     <button 
-                      className="youtube-auth-btn"
+                      className="youtube-auth-btn-seo"
                       onClick={handleAuthorizeYouTube}
                       disabled={authorizing}
                     >
@@ -538,10 +626,7 @@ function SEO({ videoThumbnail }) {
             {/* YouTube Authorization Message */}
             {user && !hasYoutubeAuth && videoURL && videoURL.includes("youtube.com") && !authorizing && (
               <div className="youtube-auth-note">
-                <p>
-                  <strong>Note:</strong> To update SEO for YouTube videos, you need to connect 
-                  Channel-IQ to your YouTube account.
-                </p>
+                
               </div>
             )}
           </div>

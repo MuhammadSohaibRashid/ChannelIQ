@@ -53,6 +53,9 @@ const Optimizevideo_shortform = () => {
           enhancementType: enhancementLabel,
           selectedFeatures,
           videoTitle,
+          audio_processing: results.audio_processing,
+          email_notification: results.email_notification,
+          final_processed: results.final_processed
         });
       } else {
         // Fallback to individual processes if final isn't available
@@ -108,6 +111,9 @@ const Optimizevideo_shortform = () => {
             enhancementType: enhancementType,
             selectedFeatures,
             videoTitle,
+            audio_processing: results.audio_processing,
+            email_notification: results.email_notification,
+            final_processed: null // No final processing in this case
           });
         } else {
           setMessage("No processed video available.");
@@ -118,99 +124,125 @@ const Optimizevideo_shortform = () => {
 
   // Function to store details in Firestore
   const saveOptimizationDetails = async ({
-    processedVideoURL,
-    originalVideoURL,
-    enhancementType,
-    selectedFeatures,
-    videoTitle, // Accept videoTitle as a parameter
-  }) => {
-    console.log("🔄 saveOptimizationDetails called");
-
-    if (!user) {
-      console.log("❌ User not logged in. Cannot save video details.");
-      return;
-    }
-
-    try {
-      console.log("🔍 Fetching videos for user:", user.uid);
-      const videosRef = collection(db, "users", user.uid, "videos");
-      const querySnapshot = await getDocs(videosRef);
-
-      // ✅ Apply new title logic
-      let sanitizedTitle = videoTitle
-        ? videoTitle.replace(/[^\w\s]/gi, "").trim()
-        : `video_${Date.now()}`; // Fallback if undefined
-
-      let originalTitle = videoTitle || "Unknown Video";
-
-      console.log("📌 Received Video Title:", videoTitle);
-      console.log("📌 Step 1: Initial Sanitized Title:", sanitizedTitle);
-
-      // Fetch title from Firestore if not available
-      if (!videoTitle) {
-        querySnapshot.forEach((doc) => {
-          const videoData = doc.data();
-          console.log("📌 Video Data from Firestore:", videoData);
-
-          if (videoData.title) {
-            let title = videoData.title.replace(/[^\w\s]/gi, "").trim();
-            console.log("✅ Found and Sanitized Title from Firestore:", title);
-
-            if (!sanitizedTitle) {
-              sanitizedTitle = title;
-              originalTitle = videoData.title;
-              console.log("🟢 Step 2: Updated Sanitized Title:", sanitizedTitle);
-              console.log("🟢 Step 3: Updated Original Title:", originalTitle);
+      processedVideoURL,
+      originalVideoURL,
+      enhancementType,
+      selectedFeatures,
+      videoTitle,
+      audio_processing,
+      email_notification,
+      final_processed
+    }) => {
+      console.log("🔄 saveOptimizationDetails called");
+    
+      if (!user) {
+        console.log("❌ User not logged in. Cannot save video details.");
+        return;
+      }
+    
+      // ✅ Log incoming data
+      console.log("🛠 Incoming Data:");
+      console.log("🎵 audio_processing:", audio_processing);
+      console.log("📧 email_notification:", email_notification);
+      console.log("🎞 final_processed:", final_processed);
+      console.log("🏷 videoTitle:", videoTitle);
+    
+      try {
+        const videosRef = collection(db, "users", user.uid, "videos");
+        const querySnapshot = await getDocs(videosRef);
+    
+        // Sanitize or generate title
+        let sanitizedTitle = videoTitle
+          ? videoTitle.replace(/[^\w\s-]/gi, "").trim()
+          : `video_${Date.now()}`;
+        let originalTitle = videoTitle || "Unknown Video";
+    
+        if (!videoTitle) {
+          querySnapshot.forEach((doc) => {
+            const videoData = doc.data();
+            if (videoData.title) {
+              const title = videoData.title.replace(/[^\w\s-]/gi, "").trim()
+              if (!sanitizedTitle) {
+                sanitizedTitle = title;
+                originalTitle = videoData.title;
+              }
             }
-          }
-        });
-      }
-
-      // Final fallback if title is still unavailable
-      if (!sanitizedTitle) {
-        console.log("⚠️ No matching video found. Using fallback.");
-        sanitizedTitle = `video_${Date.now()}`;
-        originalTitle = "Unknown Video";
-      }
-
-      console.log("📌 Final Sanitized Video Title:", sanitizedTitle);
-      console.log("✅ Firestore Path:", `users/${user.uid}/videos/${sanitizedTitle}/generate/ShortForm`);
-
-      // Save to Firestore (Ensure the correct document path is used)
-      const clipDocRef = doc(db, `users/${user.uid}/videos/${sanitizedTitle}/generate/ShortForm`);
-
-      await setDoc(
-        clipDocRef,
-        {
-          processedVideoURL,
-          originalVideoURL,
-          enhancementType,
-          selectedFeatures,
+          });
+        }
+    
+        if (!sanitizedTitle) {
+          sanitizedTitle = `video_${Date.now()}`;
+          originalTitle = "Unknown Video";
+        }
+    
+        const clipDocRef = doc(
+          db,
+          `users/${user.uid}/videos/${sanitizedTitle}/generate/ShortForm`
+        );
+    
+        // ✅ Build OptimizedVid object and remove undefined manually
+        const optimizedVidData = {};
+        if (audio_processing && typeof audio_processing === "object") {
+          optimizedVidData.audio_processing = audio_processing;
+        }
+        if (email_notification && typeof email_notification === "object") {
+          optimizedVidData.email_notification = email_notification;
+        }
+        if (final_processed && typeof final_processed === "object") {
+          optimizedVidData.final_processed = final_processed;
+        }
+        
+        // Add additional metadata
+        optimizedVidData.processedVideoURL = processedVideoURL;
+        optimizedVidData.originalVideoURL = originalVideoURL;
+        optimizedVidData.enhancementType = enhancementType;
+        optimizedVidData.selectedFeatures = selectedFeatures;
+    
+        console.log("📦 Final OptimizedVid object:", optimizedVidData);
+    
+        const dataToSave = {
+          OptimizedVid: optimizedVidData,
+          videoTitle: originalTitle,
           timestamp: serverTimestamp(),
-          videoTitle: originalTitle, // Save actual video title
-        },
-        { merge: true }
-      );
+        };
+    
+        await setDoc(clipDocRef, dataToSave, { merge: true });
+    
+        console.log("✅ Optimized video details saved successfully in Firestore!");
+      } catch (error) {
+        console.error("🔥 Error saving optimized video details:", error);
+      }
+    };
 
-      console.log("✅ Video details saved successfully in Firestore!");
-    } catch (error) {
-      console.error("🔥 Error saving video details to Firestore:", error);
-    }
-  };
-
-  const handleCompare = () => {
-    const { results, selectedFeatures } = location.state;
-
-    navigate("/comparison", {
-      state: {
-        results: results,
-        selectedFeatures,
-        originalClip: originalClip,
-        processedVideo: videoPath,
-        seoData: results.seo || null,
-      },
-    });
-  };
+    const handleCompare = () => {
+      const { 
+        results = {}, 
+        selectedFeatures = [], 
+        selectedClip 
+      } = location.state || {};
+    
+      const originalClipData = typeof selectedClip === 'object' 
+        ? { 
+            url: selectedClip.url,
+            key: selectedClip.key
+          }
+        : { 
+            url: selectedClip,
+            key: selectedClip?.split("/").pop() || ''
+          };
+    
+      navigate("/comparison", {
+        state: {
+          results,
+          selectedFeatures,
+          videoURL: originalClipData.url,
+          s3Key: originalClipData.key,
+          localVideoPath: `\\media\\videos\\${originalClipData.key}`,
+          processedS3Url: results?.final_processed?.s3_url || videoPath, // Use videoPath directly
+          seoData: results?.seo || null
+        }
+      });
+    };
 // Handle video download
 const handleDownload = () => {
   if (videoPath) {
@@ -277,15 +309,47 @@ const handleDownload = () => {
                 Your browser does not support the video tag.
               </video>
               <div className="video-info">
-                <div className="action-buttons">
-                  <button className="comparison-btn" onClick={handleCompare}>
-                    Compare Results
-                  </button>
-                  <button className="download-btn" onClick={handleDownload}>
-                    Download Video
-                  </button>
-                </div>
-              </div>
+  <div className="action-buttons" style={{ display: 'flex', gap: '15px', justifyContent: 'center' }}>
+    <button 
+      className="comparison-btn-sf" 
+      onClick={handleCompare}
+      style={{
+        background: '#8f3af5',
+        color: 'white',
+        padding: '12px 24px',
+        fontSize: '16px',
+        fontWeight: '600',
+        border: 'none',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        transition: 'all 0.3s ease',
+        minWidth: '180px',
+        boxShadow: '0 4px 10px rgba(0, 0, 0, 0.2)'
+      }}
+    >
+      Compare Results
+    </button>
+    <button 
+      className="download-btn-sf" 
+      onClick={handleDownload}
+      style={{
+        backgroundColor: '#8f3af5',
+        color: 'white',
+        border: 'none',
+        padding: '12px 24px',
+        marginTop: '0px',
+        borderRadius: '8px',
+        cursor: 'pointer',
+        fontSize: '16px',
+        fontWeight: '600',
+        transition: 'all 0.3s ease',
+        boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)'
+      }}
+    >
+      Download Video
+    </button>
+  </div>
+</div>
             </>
           ) : (
             <div className="no-video">

@@ -2,20 +2,24 @@ import React, { useState, useContext, useEffect } from "react";
 import { useLocation, useNavigate } from "react-router-dom";
 import { UserContext } from "./UserContext"; // Import User Context
 import { db } from "../Firebase"; // Import Firestore Database
-import { doc, setDoc, collection, serverTimestamp } from "firebase/firestore";
+import { doc, setDoc, serverTimestamp } from "firebase/firestore";
 import "./Seo_shortform.css";
 
 function Seo_shortform({ videoThumbnail }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useContext(UserContext); // Get user session
-  const { message, results, selectedFeatures, selectedClip } = location.state || {};
+  const { message, results, selectedFeatures, selectedClip, videoTitle: initialVideoTitle } = location.state || {};
   const [seoMessage, setSeoMessage] = useState(message || "No SEO data received.");
   const [uploading, setUploading] = useState(false);
   const [authorizing, setAuthorizing] = useState(false);
   const [uploadStatus, setUploadStatus] = useState(null);
   const [authToken, setAuthToken] = useState(null);
   const [hasYoutubeAuth, setHasYoutubeAuth] = useState(false);
+  const [videoTitle, setVideoTitle] = useState(initialVideoTitle || "");
+  
+  // Check if only SEO is selected
+  const isSeoOnly = selectedFeatures?.length === 1 && selectedFeatures?.includes("SEO");
 
   // Extract SEO data for easier access
   const seoData = results?.seo || {};
@@ -24,15 +28,20 @@ function Seo_shortform({ videoThumbnail }) {
   const title = seoData.title || "No title available.";
   const tags = seoData.hashtags?.join(", ") || "No tags available.";
 
-  // Check for videoTitle from previous page
-  const videoTitle = location.state?.videoTitle || null;
-
-  // If no title found from previous page, show an error
   useEffect(() => {
-    if (!videoTitle) {
-      alert("⚠️ No title found from previous page!");
-    }
-  }, [videoTitle]);
+      if (location.state) {
+        console.log("Received data from previous page:", location.state);
+        if (location.state.videoTitle) {
+          setVideoTitle(location.state.videoTitle);
+        }
+      }
+    }, [location.state]);
+      // If no title found from previous page, show an error
+  useEffect(() => {
+      if (!videoTitle) {
+        console.warn("⚠️ No title found from previous page!");
+      }
+    }, [videoTitle]);
 
   console.log("🚀 Video Title from Previous Page:", videoTitle || "No title found");
 
@@ -49,7 +58,7 @@ function Seo_shortform({ videoThumbnail }) {
     }
   }, [user]);
 
-  // ✅ Save SEO Short Form Details
+  // ✅ Save SEO Short Form Details to a seo field in the ShortForm document
   const saveSEOToDB = async (user, videoTitle, title, description, tags, keywords) => {
     if (!user) return console.error("❌ User not logged in.");
     const extractedUserId = user?.uid;
@@ -57,7 +66,7 @@ function Seo_shortform({ videoThumbnail }) {
     if (!videoTitle?.trim()) return console.error("❌ Error: videoTitle is empty.");
 
     try {
-      const sanitizedTitle = videoTitle.replace(/\s+/g, " ");
+      const sanitizedTitle = videoTitle.replace(/[^\w\s-]/gi, "").trim();
       const clipDocRef = doc(db, `users/${user.uid}/videos/${sanitizedTitle}/generate/ShortForm`);
       const seoData = {
         title: title || "Untitled",
@@ -73,16 +82,146 @@ function Seo_shortform({ videoThumbnail }) {
     }
   };
 
-  // ✅ Save Video Details
+// ✅ Save Video Details to a videodetails field in the ShortForm document
+const saveOptimizationDetails = async ({
+    processedVideoURL,
+    originalVideoURL,
+    enhancementType,
+    selectedFeatures,
+    videoTitle,
+    audio_processing,
+    email_notification,
+    final_processed
+  }) => {
+    console.log("🔄 saveOptimizationDetails called from SEO component");
+  
+    if (!user) {
+      console.log("❌ User not logged in. Cannot save video details.");
+      return;
+    }
+  
+    // ✅ Log incoming data
+    console.log("🛠 Incoming Data from SEO component:");
+    console.log("🎵 audio_processing:", audio_processing);
+    console.log("📧 email_notification:", email_notification);
+    console.log("🎞 final_processed:", final_processed);
+    console.log("🏷 videoTitle:", videoTitle);
+    console.log("🔗 status:", processedVideoURL);
+  
+    try {
+      // Sanitize or generate title
+      let sanitizedTitle = videoTitle
+        ? videoTitle.replace(/[^\w\s-]/gi, "").trim()
+        : `video_${Date.now()}`;
+      let originalTitle = videoTitle || "Unknown Video";
+  
+      if (!sanitizedTitle) {
+        sanitizedTitle = `video_${Date.now()}`;
+        originalTitle = "Unknown Video";
+      }
+  
+      const clipDocRef = doc(
+        db,
+        `users/${user.uid}/videos/${sanitizedTitle}/generate/ShortForm`
+      );
+  
+      // ✅ Build OptimizedVid object
+      const optimizedVidData = {};
+      if (audio_processing && typeof audio_processing === "object") {
+        optimizedVidData.audio_processing = audio_processing;
+      }
+      if (email_notification && typeof email_notification === "object") {
+        optimizedVidData.email_notification = email_notification;
+      }
+      if (final_processed && typeof final_processed === "object") {
+        optimizedVidData.final_processed = final_processed;
+      }
+      
+      // Add additional metadata
 
+      optimizedVidData.enhancementType = enhancementType;
+      optimizedVidData.selectedFeatures = selectedFeatures;
+  
+      console.log("📦 Final OptimizedVid object from SEO:", optimizedVidData);
+  
+      const dataToSave = {
+        OptimizedVid: optimizedVidData,
+        videoTitle: originalTitle,
+        timestamp: serverTimestamp(),
+      };
+  
+      await setDoc(clipDocRef, dataToSave, { merge: true });
+  
+      console.log("✅ Optimized video details saved successfully from SEO component!");
+    } catch (error) {
+      console.error("🔥 Error saving optimized video details from SEO:", error);
+    }
+  };
 
   // ✅ Automatically Save Data
   useEffect(() => {
-    if (videoTitle && videoTitle !== "No title available." && user) {
-      const sanitizedTitle = videoTitle.trim();
-      saveSEOToDB(user, sanitizedTitle, title, description, tags, keywords);
-    }
-  }, [videoTitle, title, description, tags, keywords, selectedClip, selectedFeatures, user]);
+      if (videoTitle && videoTitle !== "No title available." && user) {
+        const sanitizedTitle = videoTitle.trim();
+    
+        // Save SEO
+        saveSEOToDB(user, sanitizedTitle, title, description, tags, keywords);
+    
+        // Save OptimizedVid if we have results data
+        if (
+          results?.audio_processing ||
+          results?.email_notification ||
+          results?.final_processed ||
+          selectedClip
+        ) {
+          // Determine enhancement types based on selected features
+          let enhancementLabel = "";
+          
+          if (selectedFeatures?.includes("Video Quality")) {
+            enhancementLabel = "Video Enhanced";
+          }
+          
+          if (selectedFeatures?.includes("Noise Reduction")) {
+            enhancementLabel = enhancementLabel ? "Audio & Video Enhanced" : "Audio Enhanced";
+          }
+          
+          if (selectedFeatures?.includes("Captions")) {
+            enhancementLabel = enhancementLabel ? `${enhancementLabel}, Captions Added` : "Captions Added";
+          }
+  
+          if (selectedFeatures?.includes("SEO") && !enhancementLabel) {
+            enhancementLabel = "SEO Optimized";
+          }
+  
+          // Get best video URL
+          const processedVideoURL = 
+            results?.final_processed?.s3_url || 
+            results?.audio_processing?.s3_url || 
+            results?.video_upscaling?.s3_url || 
+            results?.captions?.s3_url || 
+            (typeof selectedClip === 'object' ? selectedClip.url : selectedClip);
+  
+          saveOptimizationDetails({
+            processedVideoURL: processedVideoURL,
+            enhancementType: enhancementLabel,
+            selectedFeatures: selectedFeatures || [],
+            videoTitle: sanitizedTitle,
+            audio_processing: results?.audio_processing || null,
+            email_notification: results?.email_notification || null,
+            final_processed: results?.final_processed || null,
+          });
+        }
+      }
+    }, [
+      videoTitle,
+      title,
+      description,
+      tags,
+      keywords,
+      selectedClip,
+      selectedFeatures,
+      user,
+      results, // include this so it triggers when results change
+    ]);
 
   // Function to check if user has YouTube authorization
   const checkYoutubeAuth = async (token) => {
@@ -105,8 +244,8 @@ function Seo_shortform({ videoThumbnail }) {
 
   const getVideoUrl = () => {
     // If SEO is the only selected feature, return the selected clip URL directly
-    if (selectedFeatures?.length === 1 && selectedFeatures?.includes("SEO")) {
-      return selectedClip.url || selectedClip;
+    if (isSeoOnly) {
+      return typeof selectedClip === 'object' ? selectedClip.url : selectedClip;
     }
 
     // For processed files, use the S3 URL when available in results
@@ -131,11 +270,10 @@ function Seo_shortform({ videoThumbnail }) {
     }
 
     // Return selectedClip URL or fallback to the object itself
-    return selectedClip?.url || selectedClip;
+    return typeof selectedClip === 'object' ? selectedClip.url : selectedClip;
   };
 
   const handleCompare = () => {
-    // Extract the original clip information for comparison
     const originalClipData = typeof selectedClip === 'object' 
       ? { 
           url: selectedClip.url,
@@ -145,7 +283,7 @@ function Seo_shortform({ videoThumbnail }) {
           url: selectedClip,
           key: selectedClip.split("/").pop()
         };
-
+  
     navigate("/comparison", {
       state: {
         results: results,
@@ -153,7 +291,9 @@ function Seo_shortform({ videoThumbnail }) {
         videoURL: originalClipData.url,
         s3Key: originalClipData.key,
         localVideoPath: `\\media\\videos\\${originalClipData.key.split("/").pop()}`,
-        seoData: null
+        processedS3Url: results?.final_processed?.s3_url || getVideoUrl(),
+        // Only include seoData if SEO is not the only selected feature
+        ...(isSeoOnly ? {} : { seoData: null })
       }
     });
   };
@@ -328,123 +468,182 @@ function Seo_shortform({ videoThumbnail }) {
     }
   };
 
+   // Handle copy functionality for SEO data
+   const handleCopy = (text) => {
+    navigator.clipboard.writeText(text)
+      .then(() => {
+        alert("Copied to clipboard!");
+      })
+      .catch(err => {
+        console.error('Failed to copy text: ', err);
+      });
+  };
+
   return (
     <div className="seo-app">
       {/* Navbar with User Session */}
-      <header className="header">
-        <h1 className="logo" onClick={() => navigate("/")}>
-          <span className="bold">Channel-</span>
-          <span className="highlight">IQ</span>
-        </h1>
+      {/* Header */}
+      <header className="dashboard-header">
+                <div className="logo-container" onClick={() => navigate("/")}>
+                    <h1 className="logo">
+                        <span className="logo-bold">Channel-</span>
+                        <span className="logo-highlight">IQ</span>
+                    </h1>
+                </div>
 
-        <nav className="nav">
-          {user ? (
-            <div className="user-info">
-              <img src={user.picture} alt="User" className="user-avatar" />
-              <span className="username">{user.name}</span>
-              <button className="logout-btn" onClick={logout}>Logout</button>
-            </div>
-          ) : (
-            <button className="login-btn" onClick={() => navigate("/login")}>
-              Login
-            </button>
-          )}
-          <button className="home-button" onClick={() => navigate("/clipper")}>
-            Back to Clipper
-          </button>
-        </nav>
-      </header>
+                <div className="header-right">
+                    {user ? (
+                        <div className="user-profile">
+                            <img src={user.picture} alt="User" className="user-avatar" />
+                            <span className="username">{user.name}</span>
+                            <button className="logout-button" onClick={logout}>Logout</button>
+                        </div>
+                    ) : (
+                        <button className="login-button" onClick={() => navigate("/login")}>
+                            Login
+                        </button>
+                    )}
+                </div>
+            </header>
+
 
       <main className="main-content">
-        <button className="clipper-btn" onClick={() => navigate("/clipper")}>
-          Go to Clipper
-        </button>
+    
+       {/* Replace your clip-section div with this updated version */}
+<div className="clip-section">
+  <div className="clip-container">
+    <div className="clip-content-wrapper">
+      <div className="media-preview">
+        <video className="preview-video" controls>
+          <source src={getVideoUrl()} type="video/mp4" />
+          Your browser does not support the video tag.
+        </video>
+      </div>
 
-        <div className="clip-section">
-          <div className="media-preview">
-            <video className="preview-video" controls>
-              <source src={getVideoUrl()} type="video/mp4" />
-              Your browser does not support the video tag.
-            </video>
-          </div>
-
-          <div className="customize-clip">
-            <div className="seo-data">
-              <div className="seo-box">
-                <h2>Title</h2>
-                <p>{title}</p>
-              </div>
-              <div className="seo-box">
-                <h2>Description</h2>
-                <p>{description}</p>
-              </div>
-              <div className="seo-box">
-                <h2>Keywords</h2>
-                <p>{keywords}</p>
-              </div>
-              <div className="seo-box">
-                <h2>Tags</h2>
-                <p>{tags}</p>
-              </div>
+      <div className="customize-clip">
+        <div className="seo-container">
+          <h3 className="seo-label">SEO Details</h3>
+          <div className="seo-data">
+            <div className="seo-box">
+              <h2>Title</h2>
+              <button className="copy-btn" onClick={() => handleCopy(title)}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+              <p>{title}</p>
             </div>
-
-            <div className="action-buttons">
-              {(selectedFeatures?.includes("Noise Reduction") ||
-                selectedFeatures?.includes("Video Quality") ||
-                selectedFeatures?.includes("Captions")) && (
-                <button className="comparison-btn" onClick={handleCompare}>
-                  Compare Results
-                </button>
-              )}
-              
-              {/* YouTube Auth/Upload Buttons */}
-              {user && !hasYoutubeAuth ? (
-                <button 
-                  className="youtube-auth-btn"
-                  onClick={handleAuthorizeYouTube}
-                  disabled={authorizing}
-                >
-                  {authorizing ? "Authorizing..." : "Connect YouTube"}
-                </button>
-              ) : (
-                <button 
-                  className={`youtube-upload-btn ${uploading ? 'uploading' : ''}`}
-                  onClick={handleUploadToYouTube}
-                  disabled={uploading || !user}
-                >
-                  {uploading ? "Uploading..." : "Upload to YouTube"}
-                </button>
-              )}
+            <div className="seo-box">
+              <h2>Description</h2>
+              <button className="copy-btn" onClick={() => handleCopy(description)}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+              <p>{description}</p>
             </div>
-
-            {/* Upload Status Message */}
-            {uploadStatus && (
-              <div className={`upload-status ${uploadStatus.success ? 'success' : 'error'}`}>
-                <p>{uploadStatus.message}</p>
-                {uploadStatus.success && uploadStatus.videoId && (
-                  <a 
-                    href={`https://www.youtube.com/watch?v=${uploadStatus.videoId}`}
-                    target="_blank"
-                    rel="noopener noreferrer"
-                    className="view-video-link"
-                  >
-                    View on YouTube
-                  </a>
-                )}
-              </div>
-            )}
-
-            {/* YouTube Authorization Message */}
-            {user && !hasYoutubeAuth && !authorizing && (
-              <div className="youtube-auth-note">
-                <p>
-                  <strong>Note:</strong> To upload videos to YouTube, you need to connect 
-                  Channel-IQ to your YouTube account.
-                </p>
-              </div>
-            )}
+            <div className="seo-box">
+              <h2>Keywords</h2>
+              <button className="copy-btn" onClick={() => handleCopy(keywords)}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+              <p>{keywords}</p>
+            </div>
+            <div className="seo-box">
+              <h2>Tags</h2>
+              <button className="copy-btn" onClick={() => handleCopy(tags)}>
+                <svg xmlns="http://www.w3.org/2000/svg" width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2" strokeLinecap="round" strokeLinejoin="round">
+                  <rect x="9" y="9" width="13" height="13" rx="2" ry="2"></rect>
+                  <path d="M5 15H4a2 2 0 0 1-2-2V4a2 2 0 0 1 2-2h9a2 2 0 0 1 2 2v1"></path>
+                </svg>
+              </button>
+              <p>{tags}</p>
+            </div>
           </div>
         </div>
+
+        {/* Upload Status Message */}
+        {uploadStatus && (
+          <div className={`upload-status ${uploadStatus.success ? 'success' : 'error'}`}>
+            <p>{uploadStatus.message}</p>
+            {uploadStatus.success && uploadStatus.videoId && (
+              <a 
+                href={`https://www.youtube.com/watch?v=${uploadStatus.videoId}`}
+                target="_blank"
+                rel="noopener noreferrer"
+                className="view-video-link"
+              >
+                View on YouTube
+              </a>
+            )}
+          </div>
+        )}
+
+        {/* YouTube Authorization Message */}
+        {user && !hasYoutubeAuth && !authorizing && (
+          <div className="youtube-auth-note">
+            {/* Your authorization note content */}
+          </div>
+        )}
+      </div>
+    </div>
+    <div className="content-container-seo">
+                            
+      <div className="action-buttons">
+        {/* Only show Compare Results button when SEO is not the only selected feature */}
+        {!isSeoOnly && (
+          <button className="comparison-btn" onClick={handleCompare}>
+            Compare Results
+          </button>
+        )}
+        
+        {/* YouTube Auth/Upload Buttons */}
+        {user && !hasYoutubeAuth ? (
+          <button 
+            className="youtube-auth-btn"
+            onClick={handleAuthorizeYouTube}
+            disabled={authorizing}
+          >
+            {authorizing ? "Authorizing..." : "Connect YouTube"}
+          </button>
+        ) : (
+          <button 
+            className={`youtube-upload-btn ${uploading ? 'uploading' : ''}` }
+            onClick={handleUploadToYouTube}
+            disabled={uploading || !user}
+            style={{
+              backgroundColor: '#8f3af5',
+              color: 'white',
+              border: 'none',
+              padding: '12px 24px',
+              marginTop: '20px',
+              borderRadius: '8px',
+              cursor: 'pointer',
+              fontSize: '16px',
+              fontWeight: '600',
+              transition: 'all 0.3s ease',
+              boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)'
+            }}
+          >
+            {uploading ? "Uploading..." : "Upload to YouTube"}
+          </button>
+        )}
+      </div>
+    </div>
+    {/* Action buttons moved here - at the bottom of clip-container */}
+    <div className="action-buttons">
+      {(selectedFeatures?.includes("Noise Reduction") ||
+        selectedFeatures?.includes("Video Quality") ||
+        selectedFeatures?.includes("Captions"))}
+      
+    </div>
+  </div>
+</div>
       </main>
     </div>
   );

@@ -15,7 +15,7 @@ const featureIcons = {
   noisereduction: "🔉",
   videoquality: "🎬",
   captions: "💬",
-  // Add more feature icons corresponding to potential values in 'selectedFeatures'
+  // Add more feature icons as needed
 };
 
 // Helper function to format Firebase Timestamp
@@ -35,73 +35,82 @@ const formatFirestoreTimestamp = (timestamp) => {
   }
 };
 
-const VideoDetails = ({ onClose }) => {
+// Helper function to safely extract values from potentially nested/complex objects
+const safelyGetValue = (obj, defaultValue = "N/A") => {
+  if (!obj) return defaultValue;
+  
+  if (typeof obj === 'object') {
+    // If it's an array, join values
+    if (Array.isArray(obj)) {
+      return obj.length > 0 ? obj.join(", ") : defaultValue;
+    }
+    // If it's an object but not an array, join its values
+    return Object.values(obj).length > 0 ? Object.values(obj).join(", ") : defaultValue;
+  }
+  
+  // Return the value directly if it's a string or other primitive
+  return obj || defaultValue;
+};
+
+const VideoDetails = ({ onClose, videoTitle }) => {
   const { user } = useContext(UserContext);
   const [video, setVideo] = useState(null); // Will hold { base: {}, longForm: {}, shortForm: {} }
   const [loading, setLoading] = useState(true);
   const [activeTab, setActiveTab] = useState("optimization");
   const location = useLocation();
-  // Default to longForm only if longForm data might exist, otherwise check shortForm
   const [activeFormType, setActiveFormType] = useState("longForm");
+  const [error, setError] = useState(null);
+  const [generatedClips, setGeneratedClips] = useState([]);
 
-  // Get videoTitle from location state
-  const videoTitle = location.state?.videoTitle;
 
   // --- Data Fetching Effect ---
   useEffect(() => {
     const fetchVideoDetails = async () => {
       if (!user || !user.uid || !videoTitle) {
-        console.error("User, UID, or Video Title is missing for fetching.", { user, uid: user?.uid, videoTitle });
+        console.error("User, UID, or Video Title is missing for fetching.");
+        setError("Missing required information to fetch video details.");
         setLoading(false);
         return;
       }
 
-      console.log("Fetching video details for:", { uid: user.uid, videoTitle });
       setLoading(true);
       try {
-        // Use the exact videoTitle for path (no need to sanitize if that's how it's stored)
-        const metadataRef = doc(db, "users", user.uid, "videos", videoTitle, "fetchedVideos", "metadata");
-        const longFormRef = doc(db, "users", user.uid, "videos", videoTitle, "generate", "LongForm");
-        const shortFormRef = doc(db, "users", user.uid, "videos", videoTitle, "generate", "ShortForm");
+        // Ensure sanitization logic matches EXACTLY how IDs are created
+        const sanitizedTitle = videoTitle.replace(/[^\w\s-]/gi, "").trim(); // Allow letters, numbers, space, hyphen
 
-        console.log("Fetching from paths:", {
-          metadataPath: metadataRef.path,
-          longFormPath: longFormRef.path,
-          shortFormPath: shortFormRef.path
-        });
+        const baseRef = doc(db, "users", user.uid, "videos", sanitizedTitle);
+        const longFormRef = doc(db, "users", user.uid, "videos", sanitizedTitle, "generate", "LongForm");
+        const shortFormRef = doc(db, "users", user.uid, "videos", sanitizedTitle, "generate", "ShortForm");
 
-        const [metadataSnap, longSnap, shortSnap] = await Promise.all([
-          getDoc(metadataRef),
+        console.log(`Fetching data for paths:
+          Base: ${baseRef.path}
+          Long Form: ${longFormRef.path}
+          Short Form: ${shortFormRef.path}`);
+
+        const [baseSnap, longSnap, shortSnap] = await Promise.all([
+          getDoc(baseRef),
           getDoc(longFormRef),
           getDoc(shortFormRef)
         ]);
 
-        // Log what we received
-        console.log("Metadata exists:", metadataSnap.exists());
-        console.log("LongForm exists:", longSnap.exists());
-        console.log("ShortForm exists:", shortSnap.exists());
-
-        if (metadataSnap.exists()) {
-          console.log("Metadata data:", metadataSnap.data());
-        }
-        if (longSnap.exists()) {
-          console.log("LongForm data:", longSnap.data());
-        }
-        if (shortSnap.exists()) {
-          console.log("ShortForm data:", shortSnap.data());
-        }
-
-        if (!metadataSnap.exists()) {
-          console.error("Metadata document not found:", metadataRef.path);
+        if (!baseSnap.exists()) {
+          console.error("Base video document not found:", baseRef.path);
+          setError(`Video document not found at path: ${baseRef.path}`);
           setVideo(null);
         } else {
           const videoData = {
-            base: metadataSnap.data(),
+            base: baseSnap.data(),
             longForm: longSnap.exists() ? longSnap.data() : null,
             shortForm: shortSnap.exists() ? shortSnap.data() : null
           };
-          console.log("Combined video data:", videoData);
+          console.log("Retrieved video data:", videoData);
           setVideo(videoData);
+
+          // Extract generated clips from shortForm data if available
+          if (videoData.shortForm && videoData.shortForm.clips && Array.isArray(videoData.shortForm.clips)) {
+            setGeneratedClips(videoData.shortForm.clips);
+            console.log("Found generated clips:", videoData.shortForm.clips);
+          }
 
           // Set initial activeFormType based on available data
           if (videoData.longForm) {
@@ -109,10 +118,23 @@ const VideoDetails = ({ onClose }) => {
           } else if (videoData.shortForm) {
             setActiveFormType("shortForm");
           }
+          
+          // Set initial tab based on available data
+          if (videoData.longForm?.seo || videoData.shortForm?.seo) {
+            // If SEO data is available, we can start with SEO tab
+            const hasSEOFeature = 
+              (videoData.longForm?.selectedFeatures || []).some(f => f.toLowerCase() === 'seo') ||
+              (videoData.shortForm?.selectedFeatures || []).some(f => f.toLowerCase() === 'seo');
+            
+            if (hasSEOFeature) {
+              setActiveTab("seo");
+            }
+          }
         }
 
       } catch (error) {
         console.error("Error fetching video details:", error);
+        setError(`Failed to fetch video details: ${error.message}`);
         setVideo(null);
       } finally {
         setLoading(false);
@@ -149,20 +171,25 @@ const VideoDetails = ({ onClose }) => {
     return (
       <div className="modal-overlay">
         <div className="video-details-modal loading-state">
-          <div className="loading-spinner"></div> <p>Loading...</p>
+        <div className="loading-spinner">
+        <div className="spinner-dot"></div>
+        <div className="spinner-dot"></div>
+        <div className="spinner-dot"></div>
+      </div>
+          <p>Loading video details...</p>
         </div>
       </div>
     );
   }
 
-  // --- Error or Not Found State ---
-  if (!video || !video.base) {
+  // --- Error State ---
+  if (error || !video || !video.base) {
     return (
       <div className="modal-overlay">
         <div className="video-details-modal error-state">
           <h2>Error</h2>
-          <p>Video details not found.</p>
-          <button onClick={handleClose}>Close</button>
+          <p>{error || "Video details not found."}</p>
+          <button className="close-button" onClick={handleClose}>Close</button>
         </div>
       </div>
     );
@@ -173,51 +200,81 @@ const VideoDetails = ({ onClose }) => {
 
   // --- Determine Data Source Based on Active Tab ---
   const currentFormData = activeFormType === "longForm" ? longForm : shortForm;
-  const currentFormExists = !!currentFormData; // Check if the active form data object exists
-
-  // --- Dynamic Meta Values ---
-  const processedDateDisplay = formatFirestoreTimestamp(currentFormData?.timestamp || currentFormData?.processedDate);
-  const enhancementTypeDisplay = currentFormData?.enhancementType || "N/A"; 
-  // Adjust status logic to check both status and uppercase SUCCESS
-  const statusDisplay = currentFormData?.status || "Unknown"; 
-  const isOptimized = statusDisplay.toLowerCase() === "completed" || statusDisplay.toLowerCase() === "success"; 
-  const processingStatusBadge = isOptimized ? "Complete" : (statusDisplay.toLowerCase() === "processing" ? "Processing" : "Pending");
+  const currentFormExists = !!currentFormData;
   
-  // Get selected features - accounting for both array and lowercase "noisereduction" format
-  let selectedFeaturesForCurrentForm = [];
-  if (currentFormData?.selectedFeatures && Array.isArray(currentFormData.selectedFeatures)) {
-    selectedFeaturesForCurrentForm = currentFormData.selectedFeatures.map(feature => 
-      typeof feature === 'string' ? feature : String(feature)
-    );
+  // --- Extract data safely ---
+  // For Long Form
+  const longFormVideoUrl = longForm?.OptimizedVid?.s3?.url || null;
+  const longFormSeoTitle = safelyGetValue(longForm?.seo?.title, base.title || "Untitled");
+  const longFormSeoDescription = safelyGetValue(longForm?.seo?.description, base.description || "N/A");
+  const longFormSeoKeywords = safelyGetValue(longForm?.seo?.keywords, "N/A");
+  const longFormSeoTags = safelyGetValue(longForm?.seo?.tags, "N/A");
+  
+  // For Short Form
+  const shortFormVideoUrl = shortForm?.OptimizedVid?.final_processed?.s3_url || null;
+  const shortFormSeoTitle = safelyGetValue(shortForm?.seo?.title, base.title ? `${base.title} - Short` : "Untitled Short");
+  const shortFormSeoDescription = safelyGetValue(shortForm?.seo?.description, base.description || "N/A");
+  const shortFormSeoKeywords = safelyGetValue(shortForm?.seo?.keywords, "N/A");
+  const shortFormSeoTags = safelyGetValue(shortForm?.seo?.tags, "N/A");
+  
+  // Processed Date
+  const processedDateDisplay = currentFormData?.timestamp
+    ? formatFirestoreTimestamp(currentFormData.timestamp)
+    : "Not Available";
+  
+  // Enhancement Type
+  const enhancementTypeDisplay = currentFormData?.OptimizedVid?.enhancementType || 
+                               (currentFormData?.selectedFeatures?.includes("enhancement") ? "Standard Enhancement" : "N/A");
+  
+  // Status Handling
+  let statusDisplay = "Unknown";
+  let isOptimized = false;
+  let processingStatusBadge = "Pending";
+  
+  // Different status paths for long form vs short form
+  if (activeFormType === "longForm") {
+    const rawStatus = longForm?.OptimizedVid?.emailNotification?.status || "pending";
+    
+    if (rawStatus === "success" || longFormVideoUrl) {
+      statusDisplay = "Completed";
+      isOptimized = true;
+      processingStatusBadge = "Complete";
+    } else if (rawStatus === "processing") {
+      statusDisplay = "Processing";
+      processingStatusBadge = "Processing";
+    } else if (rawStatus === "failed") {
+      statusDisplay = "Failed";
+      processingStatusBadge = "Failed";
+    } else {
+      statusDisplay = "Pending email notification";
+      processingStatusBadge = "Pending";
+    }
+  } else {
+    // Short form status handling
+    const rawStatus = shortForm?.OptimizedVid?.final_processed?.status;
+    
+    if (rawStatus === "success" || shortFormVideoUrl) {
+      statusDisplay = "Completed";
+      isOptimized = true;
+      processingStatusBadge = "Complete";
+    } else if (rawStatus === "processing") {
+      statusDisplay = "Processing";
+      processingStatusBadge = "Processing";
+    } else if (rawStatus === "failed") {
+      statusDisplay = "Failed";
+      processingStatusBadge = "Failed";
+    } else {
+      statusDisplay = "Pending email notification";
+      processingStatusBadge = "Pending";
+    }
   }
   
-  console.log("Render data:", {
-    processedDateDisplay,
-    enhancementTypeDisplay,
-    statusDisplay,
-    isOptimized,
-    processingStatusBadge,
-    selectedFeaturesForCurrentForm,
-    activeFormType
-  });
+  // Selected Features
+  const selectedFeaturesForCurrentForm = currentFormData?.selectedFeatures || [];
 
-  // Helper to get the correct video URL for the short form
-  const getShortFormVideoUrl = () => {
-    if (!shortForm) return null;
-    
-    // Direct URL if available
-    if (shortForm.processedVideoURL) return shortForm.processedVideoURL;
-    
-    // Check processed clips if available
-    if (shortForm.processedClips && shortForm.processedClips.length > 0) {
-      return shortForm.processedClips[0].url;
-    }
-    
-    // Check clip path directly
-    if (shortForm.clipPath) return shortForm.clipPath;
-    
-    return null;
-  };
+  // Convert features to lowercase for consistent comparison
+  const lowerCaseFeatures = selectedFeaturesForCurrentForm.map(f => f.toLowerCase());
+  const hasSeoFeature = lowerCaseFeatures.includes('seo');
 
   // --- Render Main Modal ---
   return (
@@ -243,11 +300,11 @@ const VideoDetails = ({ onClose }) => {
               className="video-thumbnail"
             />
             <div className={`status-badge ${isOptimized ? 'complete' : 'processing'}`}>
-              {processingStatusBadge}
+                {processingStatusBadge}
             </div>
             {/* Show Long/Short Form type badge if data exists */}
             {currentFormExists && (
-              <div className="type-badge">{activeFormType === "longForm" ? "Long Form" : "Short Form"}</div>
+               <div className="type-badge">{activeFormType === "longForm" ? "Long Form" : "Short Form"}</div>
             )}
           </div>
 
@@ -268,9 +325,7 @@ const VideoDetails = ({ onClose }) => {
                 <strong>Original Source:</strong>
                 {base.videoURL ? (
                   <a href={base.videoURL} target="_blank" rel="noopener noreferrer" className="source-link">View Original</a>
-                ) : (
-                  "N/A"
-                )}
+                ) : ( "N/A" )}
               </div>
               <div className="meta-item">
                 <strong>Status:</strong>
@@ -307,13 +362,22 @@ const VideoDetails = ({ onClose }) => {
           >
             Optimization
           </button>
-          {/* Show SEO tab only if SEO is in the selected features for the *currently active* form type or if seo data exists */}
-          {(selectedFeaturesForCurrentForm.some(f => f.toLowerCase() === 'seo') || currentFormData?.seo) && (
+          {/* Show SEO tab only if SEO is in the selected features */}
+          {hasSeoFeature && (
             <button
               className={`tab-button ${activeTab === "seo" ? "active" : ""}`}
               onClick={() => setActiveTab("seo")}
             >
               SEO
+            </button>
+          )}
+          {/* Add Clips tab if clips are available */}
+          {generatedClips.length > 0 && (
+            <button
+              className={`tab-button ${activeTab === "clips" ? "active" : ""}`}
+              onClick={() => setActiveTab("clips")}
+            >
+              Clips
             </button>
           )}
         </div>
@@ -350,26 +414,19 @@ const VideoDetails = ({ onClose }) => {
                 <div className="form-type-content">
                   <div className="video-player-section">
                     <h3>Optimized Long-Form Video</h3>
-                    {(longForm.processedVideoURL || longForm.s3FinalURL || longForm.processedURL) ? (
-                      <video 
-                        className="video-preview" 
-                        controls 
-                        src={longForm.processedVideoURL || longForm.s3FinalURL || longForm.processedURL} 
-                        poster={base.thumbnailUrl}
-                      >
+                    {longFormVideoUrl ? (
+                      <video className="video-preview" controls src={longFormVideoUrl} poster={base.thumbnailUrl}>
                         Your browser does not support video playback.
                       </video>
                     ) : (
-                      <div className="processing-placeholder"><div className="loading-spinner"></div><p>Processing long-form video...</p></div>
+                      <div className="processing-placeholder">
+                        <div className="loading-spinner"></div>
+                        <p>Processing long-form video...</p>
+                      </div>
                     )}
-                    {(longForm.processedVideoURL || longForm.s3FinalURL || longForm.processedURL) && (
+                    {longFormVideoUrl && (
                       <div className="video-download">
-                        <a 
-                          href={longForm.processedVideoURL || longForm.s3FinalURL || longForm.processedURL} 
-                          download 
-                          target="_blank" 
-                          rel="noopener noreferrer"
-                        >
+                        <a href={longFormVideoUrl} download target="_blank" rel="noopener noreferrer">
                           Download Long-Form
                         </a>
                       </div>
@@ -378,9 +435,25 @@ const VideoDetails = ({ onClose }) => {
                   <div className="optimization-details">
                     <h3>Long-Form Details</h3>
                     <div className="info-grid">
-                      <div className="info-item"><strong>Title:</strong><p>{longForm.title || base.title || "Untitled"}</p></div>
-                      <div className="info-item"><strong>Description:</strong><p>{longForm.description || longForm.seo?.description || base.description || "N/A"}</p></div>
-                      <div className="info-item"><strong>Keywords:</strong><p>{longForm.keywords || longForm.seo?.keywords || base.keywords || "N/A"}</p></div>
+                      <div className="info-item">
+                        <strong>Title:</strong>
+                        <p>{longFormSeoTitle}</p>
+                      </div>
+
+                      <div className="info-item">
+                        <strong>Description:</strong>
+                        <p>{longFormSeoDescription}</p>
+                      </div>
+
+                      <div className="info-item">
+                        <strong>Keywords:</strong>
+                        <p>{longFormSeoKeywords}</p>
+                      </div>
+                      
+                      <div className="info-item">
+                        <strong>Tags:</strong>
+                        <p>{longFormSeoTags}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
@@ -391,24 +464,27 @@ const VideoDetails = ({ onClose }) => {
                 <div className="form-type-content">
                   <div className="video-player-section">
                     <h3>Optimized Short-Form Video</h3>
-                    {getShortFormVideoUrl() ? (
-                      <video 
-                        className="video-preview vertical" 
-                        controls 
-                        src={getShortFormVideoUrl()} 
+                    {shortFormVideoUrl ? (
+                      <video
+                        className="video-preview vertical"
+                        controls
+                        src={shortFormVideoUrl}
                         poster={shortForm.thumbnail || base.thumbnailUrl}
                       >
                         Your browser does not support video playback.
                       </video>
                     ) : (
-                      <div className="processing-placeholder"><div className="loading-spinner"></div><p>Processing short-form video...</p></div>
+                      <div className="processing-placeholder">
+                        <div className="loading-spinner"></div>
+                        <p>Processing short-form video...</p>
+                      </div>
                     )}
-                    {getShortFormVideoUrl() && (
+                    {shortFormVideoUrl && (
                       <div className="video-download">
-                        <a 
-                          href={getShortFormVideoUrl()} 
-                          download 
-                          target="_blank" 
+                        <a
+                          href={shortFormVideoUrl}
+                          download
+                          target="_blank"
                           rel="noopener noreferrer"
                         >
                           Download Short-Form
@@ -419,53 +495,55 @@ const VideoDetails = ({ onClose }) => {
                   <div className="optimization-details">
                     <h3>Short-Form Details</h3>
                     <div className="info-grid">
-                      <div className="info-item"><strong>Title:</strong><p>{shortForm.title || base.title || "Untitled Short"}</p></div>
-                      <div className="info-item"><strong>Caption:</strong><p>{shortForm.caption || "N/A"}</p></div>
-                      <div className="info-item"><strong>Hashtags:</strong><p>{shortForm.hashtags || "N/A"}</p></div>
+                      <div className="info-item">
+                        <strong>Title:</strong>
+                        <p>{shortFormSeoTitle}</p>
+                      </div>
+                      <div className="info-item">
+                        <strong>Description:</strong>
+                        <p>{shortFormSeoDescription}</p>
+                      </div>
+                      <div className="info-item">
+                        <strong>Keywords:</strong>
+                        <p>{shortFormSeoKeywords}</p>
+                      </div>
+                      <div className="info-item">
+                        <strong>Tags:</strong>
+                        <p>{shortFormSeoTags}</p>
+                      </div>
                     </div>
                   </div>
                 </div>
               )}
 
-              {/* Clips Section - Show if in the base or in the short form */}
-              {(base.processedClipPaths && base.processedClipPaths.length > 0) || 
-               (shortForm && shortForm.processedClips && shortForm.processedClips.length > 0) ? (
+              {/* Legacy Clips Section (from base) */}
+              {base.processedClipPaths && base.processedClipPaths.length > 0 && (
                 <div className="clips-section">
                   <h3>Generated Clips</h3>
                   <div className="clips-grid">
-                    {/* Show base clips if available */}
-                    {base.processedClipPaths && base.processedClipPaths.length > 0 && 
-                      base.processedClipPaths.map((clipPath, index) => (
-                        <div key={`base-clip-${index}`} className="clip-item">
-                          <h4>Clip {index + 1}</h4>
-                          <video className="clip-preview" controls src={clipPath}> Video not supported. </video>
-                          <a href={clipPath} download target="_blank" rel="noopener noreferrer">Download Clip</a>
-                        </div>
-                      ))
-                    }
-                    
-                    {/* Show short form processed clips if available */}
-                    {shortForm && shortForm.processedClips && shortForm.processedClips.length > 0 &&
-                      shortForm.processedClips.map((clip, index) => (
-                        <div key={`short-clip-${index}`} className="clip-item">
-                          <h4>Short Clip {index + 1}</h4>
-                          <video className="clip-preview" controls src={clip.url}> Video not supported. </video>
-                          <a href={clip.url} download target="_blank" rel="noopener noreferrer">Download Clip</a>
-                        </div>
-                      ))
-                    }
+                    {base.processedClipPaths.map((clipPath, index) => (
+                      <div key={index} className="clip-item">
+                        <h4>Clip {index + 1}</h4>
+                        <video className="clip-preview" controls src={clipPath}>
+                          Video not supported.
+                        </video>
+                        <a href={clipPath} download target="_blank" rel="noopener noreferrer">
+                          Download Clip
+                        </a>
+                      </div>
+                    ))}
                   </div>
                 </div>
-              ) : null}
+              )}
             </div>
           )} {/* End Optimization Tab */}
 
           {/* --- SEO Tab --- */}
-          {activeTab === "seo" && (selectedFeaturesForCurrentForm.some(f => f.toLowerCase() === 'seo') || currentFormData?.seo) && (
+          {activeTab === "seo" && hasSeoFeature && (
             <div className="seo-tab">
               {/* Form Type Sub-Tabs */}
               <div className="form-type-tabs">
-                {longForm && longForm.seo && ( // Only show tab if longForm data exists AND SEO data exists
+                {longForm && longForm.seo && ( // Only show tab if longForm data with SEO exists
                   <button
                     className={`form-type-button ${activeFormType === "longForm" ? "active" : ""}`}
                     onClick={() => setActiveFormType("longForm")}
@@ -474,11 +552,11 @@ const VideoDetails = ({ onClose }) => {
                     Long Form SEO
                   </button>
                 )}
-                {shortForm && (shortForm.seo || shortForm.seo_details) && ( // Only show tab if shortForm data exists AND SEO data exists
+                {shortForm && shortForm.seo && ( // Only show tab if shortForm data with SEO exists
                   <button
                     className={`form-type-button ${activeFormType === "shortForm" ? "active" : ""}`}
                     onClick={() => setActiveFormType("shortForm")}
-                    disabled={!shortForm || (!shortForm.seo && !shortForm.seo_details)}
+                    disabled={!shortForm || !shortForm.seo}
                   >
                     Short Form SEO
                   </button>
@@ -489,19 +567,28 @@ const VideoDetails = ({ onClose }) => {
               {activeFormType === "longForm" && longForm?.seo && (
                 <div className="form-type-content">
                   <h3>Long-Form SEO Details</h3>
-                  <div className="seo-details info-grid"> {/* Re-use info-grid styling */}
-                    <div className="info-item"><strong>Title:</strong><p>{longForm.seo.title || longForm.title || base.title || "N/A"}</p></div>
-                    <div className="info-item"><strong>Description:</strong><p>{longForm.seo.description || longForm.description || base.description || "N/A"}</p></div>
-                    <div className="info-item"><strong>Keywords:</strong><p>{longForm.seo.keywords || longForm.keywords || "N/A"}</p></div>
-                    <div className="info-item full-width"> {/* Make tags take full width */}
+                  <div className="seo-details info-grid">
+                    <div className="info-item">
+                      <strong>Title:</strong>
+                      <p>{longFormSeoTitle}</p>
+                    </div>
+                    <div className="info-item">
+                      <strong>Description:</strong>
+                      <p>{longFormSeoDescription}</p>
+                    </div>
+                    <div className="info-item">
+                      <strong>Keywords:</strong>
+                      <p>{longFormSeoKeywords}</p>
+                    </div>
+                    <div className="info-item full-width">
                       <strong>Tags:</strong>
                       <div className="tags-container">
-                        {longForm.seo.tags ? (
-                          // Handle array tags
-                          Array.isArray(longForm.seo.tags) ? 
-                            longForm.seo.tags.map(tag => <span key={tag} className="tag">{tag}</span>) :
-                            // Handle string tags (comma separated)
-                            longForm.seo.tags.split(",").map(tag => <span key={tag.trim()} className="tag">{tag.trim()}</span>)
+                        {typeof longForm.seo.tags === 'string' ? (
+                          <p>{longForm.seo.tags}</p>
+                        ) : Array.isArray(longForm.seo.tags) && longForm.seo.tags.length > 0 ? (
+                          longForm.seo.tags.map((tag, index) => (
+                            <span key={index} className="tag">{tag}</span>
+                          ))
                         ) : (
                           <p>No tags specified.</p>
                         )}
@@ -512,43 +599,68 @@ const VideoDetails = ({ onClose }) => {
               )}
 
               {/* Short Form SEO Content */}
-              {activeFormType === "shortForm" && (shortForm?.seo || shortForm?.seo_details) && (
+              {activeFormType === "shortForm" && shortForm?.seo && (
                 <div className="form-type-content">
                   <h3>Short-Form SEO Details</h3>
                   <div className="seo-details info-grid">
-                    {/* Use shortForm.seo if available, else fall back to shortForm.seo_details */}
-                    {(() => {
-                      const seoData = shortForm.seo || shortForm.seo_details || {};
-                      return (
-                        <>
-                          <div className="info-item">
-                            <strong>Caption:</strong>
-                            <p>{seoData.caption || shortForm.caption || "N/A"}</p>
-                          </div>
-                          <div className="info-item">
-                            <strong>Hashtags:</strong>
-                            <p>{seoData.hashtags || shortForm.hashtags || "N/A"}</p>
-                          </div>
-                          <div className="info-item full-width">
-                            <strong>Trending Topics:</strong>
-                            <div className="tags-container">
-                              {seoData.trendingTopics ? (
-                                Array.isArray(seoData.trendingTopics) ?
-                                  seoData.trendingTopics.map(topic => <span key={topic} className="tag trending">{topic}</span>) :
-                                  seoData.trendingTopics.split(",").map(topic => <span key={topic.trim()} className="tag trending">{topic.trim()}</span>)
-                              ) : (
-                                <p>No trending topics specified.</p>
-                              )}
-                            </div>
-                          </div>
-                        </>
-                      );
-                    })()}
+                    <div className="info-item">
+                      <strong>Caption:</strong>
+                      <p>{shortForm.seo?.caption || shortForm.caption || "N/A"}</p>
+                    </div>
+                    <div className="info-item">
+                      <strong>Hashtags:</strong>
+                      <p>{shortForm.seo?.hashtags || shortForm.hashtags || "N/A"}</p>
+                    </div>
+                    <div className="info-item full-width">
+                      <strong>Trending Topics:</strong>
+                      <div className="tags-container">
+                        {Array.isArray(shortForm.seo?.trendingTopics) && shortForm.seo.trendingTopics.length > 0 ? (
+                          shortForm.seo.trendingTopics.map((topic, index) => (
+                            <span key={index} className="tag trending">{topic}</span>
+                          ))
+                        ) : (
+                          <p>No trending topics specified.</p>
+                        )}
+                      </div>
+                    </div>
                   </div>
                 </div>
               )}
             </div>
           )} {/* End SEO Tab */}
+
+          {/* --- Clips Tab --- */}
+          {activeTab === "clips" && generatedClips.length > 0 && (
+            <div className="clips-tab">
+              <h3>Generated Short-Form Clips</h3>
+              <div className="clips-info">
+                <div className="info-item">
+                  <strong>Clip Count:</strong> {shortForm?.clipCount || generatedClips.length}
+                </div>
+                <div className="info-item">
+                  <strong>Clip Length:</strong> {shortForm?.clipLength || "60"} seconds
+                </div>
+                <div className="info-item">
+                  <strong>Status:</strong> {shortForm?.status || "Success"}
+                </div>
+              </div>
+              <div className="clips-grid">
+                {generatedClips.map((clip, index) => (
+                  <div key={index} className="clip-item">
+                    <h4>Clip {index + 1}</h4>
+                    <video className="clip-preview vertical" controls src={clip.url}>
+                      Video not supported.
+                    </video>
+                    <div className="clip-actions">
+                      <a href={clip.url} download target="_blank" rel="noopener noreferrer" className="download-button">
+                        Download Clip
+                      </a>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            </div>
+          )} {/* End Clips Tab */}
         </div> {/* End tab-content */}
       </div> {/* End video-details-modal */}
     </div> // End modal-overlay

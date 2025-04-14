@@ -51,7 +51,7 @@ export const downloadAndUploadVideo = async (url) => {
         });
         return response.data;
     } catch (error) {
-        handleApiError(error, 'downloading and uploading video');
+        throw error;
     }
 };
 

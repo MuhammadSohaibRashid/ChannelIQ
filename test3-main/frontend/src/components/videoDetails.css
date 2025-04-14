@@ -1,18 +1,70 @@
 /* Modal overlay with backdrop filter and smooth transition */
+:root {
+  /* Colors */
+  --color-background: #121225;
+  --color-background-light: #232342;
+  --color-primary: #8f3af5;
+  --color-primary-light: rgba(143, 58, 245, 0.1);
+  --color-primary-dark: #7B2CF1;
+  --color-text: #ffffff;
+  --color-text-muted: #b8b8d0;
+  
+  /* Spacing */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+  
+  /* Typography */
+  --font-size-xs: 12px;
+  --font-size-sm: 14px;
+  --font-size-base: 16px;
+  --font-size-md: 18px;
+  --font-size-lg: 20px;
+  --font-size-xl: 24px;
+  
+  /* Font weights */
+  --font-weight-medium: 500;
+  --font-weight-semibold: 600;
+  
+  /* Borders */
+  --border-radius-sm: 4px;
+  --border-radius-md: 8px;
+  --border-radius-lg: 12px;
+  --border-radius-pill: 999px;
+  --border-radius-circle: 50%;
+  
+  /* Shadows */
+  --shadow-sm: 0 2px 4px rgba(0, 0, 0, 0.1);
+  --shadow-md: 0 4px 8px rgba(0, 0, 0, 0.2);
+  --shadow-lg: 0 8px 16px rgba(0, 0, 0, 0.3);
+  --shadow-primary: 0 4px 8px rgba(143, 58, 245, 0.2);
+  --shadow-primary-lg: 0 6px 12px rgba(143, 58, 245, 0.3);
+  
+  /* Z-index */
+  --z-index-modal: 1000;
+  
+  /* Transitions */
+  --transition-fast: 0.15s ease;
+  --transition-normal: 0.3s ease;
+}
 .modal-overlay {
-    position: fixed;
-    top: 0;
-    left: 0;
-    right: 0;
-    bottom: 0;
-    background-color: rgba(15, 15, 37, 0.8);
-    display: flex;
-    justify-content: center;
-    align-items: center;
-    z-index: var(--z-index-modal);
-    backdrop-filter: blur(5px);
-    transition: all var(--transition-normal);
-  }
+  position: fixed;
+  top: 0;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  background-color: rgba(15, 15, 37, 0.8);
+  display: flex;
+  justify-content: center;
+  align-items: flex-start; /* Align items to the top */
+  padding-top: 30px; /* Push it down */
+  z-index: var(--z-index-modal);
+  backdrop-filter: blur(5px);
+  transition: all var(--transition-normal);
+}
+
   
   .video-details-modal {
     background-color: var(--color-background);
@@ -20,7 +72,7 @@
     border-radius: var(--border-radius-lg);
     width: 85%;
     max-width: 900px;
-    max-height: 90vh;
+    max-height: 85vh;
     overflow-y: auto;
     box-shadow: var(--shadow-lg);
     animation: modalFadeIn 0.3s forwards;

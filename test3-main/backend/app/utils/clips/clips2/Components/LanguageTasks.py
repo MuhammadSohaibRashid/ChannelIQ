@@ -222,123 +222,112 @@ def GetHighlight(transcription, num_highlights, clip_length, max_retries=1):
 
     # Create the appropriate system prompt based on whether we're in auto mode
     if is_auto_mode:
-        system_prompt = f'''You are an expert video editor specializing in creating engaging short-form content. Analyze this transcription and identify EXACTLY {num_highlights} most compelling segments - no more, no less.
+        system_prompt = f"""You are a professional video editor. Your task is to extract EXACTLY {num_highlights} high-quality highlights from this transcript.
 
-CRITICAL REQUIREMENTS (MUST FOLLOW):
-1. Generate EXACTLY {num_highlights} highlights - not more, not less.
-2. STRICT DURATION ENFORCEMENT: Each highlight MUST be between {min_duration} and {MAX_AUTO_DURATION} seconds total duration.
-3. Always calculate durations precisely by subtracting start from end timestamps.
-4. VERIFY EVERY TIMESTAMP before submitting - clips with incorrect durations will be REJECTED.
+STRICT TIMING RULES:
+1. Each highlight MUST be BETWEEN {min_duration} and {MAX_AUTO_DURATION} seconds — no exceptions.
+2. Calculate duration as: duration = end_timestamp - start_timestamp.
+3. Every highlight MUST include its calculated duration for verification.
 
-YOU CAN CHOOSE BETWEEN TWO TYPES OF HIGHLIGHTS:
-1. CONTINUOUS CLIPS (PREFERRED): A single uninterrupted segment that captures a complete thought.
-2. SEGMENTED CLIPS (USE SPARINGLY): Only use if absolutely necessary to remove irrelevant content.
+HIGHLIGHT TYPES:
+1. CONTINUOUS: A single uninterrupted segment (preferred).
+2. SEGMENTED: Multiple segments stitched together (use only if essential to remove irrelevant parts).
 
 RULES FOR SEGMENTED CLIPS:
-- Only use when removing irrelevant/boring sections is essential
-- Never use segments shorter than 15 seconds
-- Do not cut during a continuous thought or mid-sentence
-- Calculate the TOTAL duration of ALL segments (must be between {min_duration} and {MAX_AUTO_DURATION} seconds)
+- Use ONLY when trimming is necessary.
+- Each segment must be AT LEAST 15 seconds long.
+- Never split mid-sentence or during continuous thoughts.
+- Combined duration must still fall between {min_duration} and {MAX_AUTO_DURATION} seconds.
 
-SELECTION CRITERIA:
-- Target complete thoughts with natural beginning and endings
-- Focus on content that works as a standalone clip
-- Prioritize surprising revelations, concise explanations, emotional moments
-- Do not cut mid-sentence or during important context
+MANDATORY VERIFICATION:
+1. Continuous: duration = end - start
+2. Segmented: total_duration = sum of segment durations
+3. If duration < {min_duration}, extend to add context
+4. If duration > {MAX_AUTO_DURATION}, trim or use segmentation
+5. Every highlight must display its duration explicitly
 
-YOUR RESPONSE MUST BE VALID JSON WITH THIS STRUCTURE:
+OUTPUT FORMAT (STRICT JSON ONLY):
 {{
   "highlights": [
     {{
       "start": <start_time_in_seconds>,
       "end": <end_time_in_seconds>,
+      "duration": <calculated_duration>,
       "content": "Brief description of clip content"
     }},
     {{
       "segments": [
-        {{ "start": <start_time_in_seconds>, "end": <end_time_in_seconds> }},
-        {{ "start": <start_time_in_seconds>, "end": <end_time_in_seconds> }}
+        {{ "start": <start_time>, "end": <end_time>, "duration": <duration> }},
+        {{ "start": <start_time>, "end": <end_time>, "duration": <duration> }}
       ],
+      "total_duration": <total_combined_duration>,
       "content": "Brief description of segments"
     }}
   ]
 }}
 
-DURATION VALIDATION (MANDATORY):
-Before finalizing each highlight:
-1. Calculate duration = end_time - start_time
-2. For segmented clips, sum all segment durations
-3. VERIFY duration is between {min_duration} and {MAX_AUTO_DURATION} seconds
-4. If duration is invalid, adjust your timestamps until it is valid
+If segments offer better clarity or quality, you may use segmented format consistently across all highlights.
 
-FINAL VERIFICATION CHECKLIST (MANDATORY):
-- Count your highlights: MUST BE EXACTLY {num_highlights}
-- Verify EVERY start/end time explicitly by calculating end - start = duration
-- Double-check ALL durations are between {min_duration} and {MAX_AUTO_DURATION} seconds
-- Use continuous clips whenever possible
-- Do not include any text outside the JSON structure
-- Do not include explanations - ONLY valid JSON'''
+FINAL CHECKLIST:
+1. TOTAL: Exactly {num_highlights} highlights ✓
+2. DURATION: Each is within {min_duration}–{MAX_AUTO_DURATION} seconds ✓
+3. VERIFICATION: All durations shown and correct ✓
+4. FORMAT: Valid JSON with NO extra text ✓
+
+OUTPUT MUST BE STRICTLY VALID JSON — NO commentary, no additional text.
+"""
     else:
-        system_prompt = f'''You are an expert video editor specializing in creating engaging short-form content. Analyze this transcription and identify EXACTLY {num_highlights} most compelling segments - no more, no less.
+        system_prompt = f"""You are a professional video editor. Your task is to extract EXACTLY {num_highlights} compelling highlights from this transcript.
 
-CRITICAL REQUIREMENTS (MUST FOLLOW):
-1. Generate EXACTLY {num_highlights} highlights - not more, no less.
-2. STRICT DURATION ENFORCEMENT: Each highlight MUST be between {min_duration} and {max_duration} seconds - NEVER OUTSIDE THIS RANGE.
-3. TARGET DURATION: Aim for clips as close as possible to {max_duration} seconds.
-4. VERIFY ALL TIMESTAMPS: Calculate each duration as (end - start) and confirm it's within range.
+STRICT TIMING RULES:
+1. Each highlight MUST be BETWEEN {min_duration} and {max_duration} seconds — NO exceptions.
+2. TARGET: Keep each clip as close as possible to {max_duration} seconds without exceeding it.
+3. Calculate duration as: duration = end_timestamp - start_timestamp.
 
-YOU CAN CHOOSE BETWEEN TWO TYPES OF HIGHLIGHTS:
-1. CONTINUOUS CLIPS (PREFERRED): A single uninterrupted segment that captures a complete thought.
-2. SEGMENTED CLIPS (USE SPARINGLY): Only use if absolutely necessary to remove irrelevant content.
+HIGHLIGHT TYPES:
+1. CONTINUOUS: A single uninterrupted segment (preferred).
+2. SEGMENTED: Multiple segments that form a coherent clip. Use only when needed to remove filler.
 
-RULES FOR SEGMENTED CLIPS:
-- Only use when removing irrelevant/boring sections is essential
-- Never use segments shorter than 15 seconds
-- Do not cut during a continuous thought or mid-sentence
-- Calculate the TOTAL duration of ALL segments (must be between {min_duration} and {max_duration} seconds)
+MANDATORY CHECKS:
+1. For each highlight: duration = end - start
+2. For segmented: total_duration = sum of segment durations
+3. Verify: {min_duration} ≤ duration ≤ {max_duration}
+4. Do NOT cut mid-sentence or remove key context
 
 SELECTION CRITERIA:
-- Target complete thoughts with natural beginning and endings
-- AIM FOR CLIPS AS CLOSE TO {max_duration} SECONDS AS POSSIBLE
-- Prioritize surprising revelations, concise explanations, emotional moments
-- Do not cut mid-sentence or during important context
+- Complete thoughts with natural beginnings and ends
+- Standalone, self-contained clips
+- Prioritize powerful moments: emotional reactions, concise insights, pivotal points
 
-YOUR RESPONSE MUST BE VALID JSON WITH THIS STRUCTURE:
+OUTPUT FORMAT (STRICT JSON ONLY):
 {{
   "highlights": [
     {{
       "start": <start_time_in_seconds>,
       "end": <end_time_in_seconds>,
+      "duration": <calculated_duration>,
       "content": "Brief description of clip content"
     }},
     {{
       "segments": [
-        {{ "start": <start_time_in_seconds>, "end": <end_time_in_seconds> }},
-        {{ "start": <start_time_in_seconds>, "end": <end_time_in_seconds> }}
+        {{ "start": <start_time>, "end": <end_time>, "duration": <duration> }},
+        {{ "start": <start_time>, "end": <end_time>, "duration": <duration> }},
+        ... //Continue as needed
       ],
+      "total_duration": <sum_of_durations>,
       "content": "Brief description of segments"
     }}
   ]
 }}
+This is the format for one continous clip and one segmented clip, if u see both clips need to be segmented then use segmented format for both and if u see both clips need to be continous then use continous format for both and if u see one clip is continous and one clip is segmented then use continous format for first clip and segmented format for second clip.
+FINAL CHECKLIST:
+1. TOTAL: Exactly {num_highlights} highlights ✓
+2. TIMING: All durations within {min_duration}–{max_duration} ✓
+3. VERIFICATION: All durations correctly calculated ✓
+4. FORMAT: Valid JSON only — NO extra text ✓
 
-DURATION VALIDATION (MANDATORY):
-Before finalizing each highlight:
-1. Calculate duration = end_time - start_time
-2. For segmented clips, sum all segment durations
-3. VERIFY duration is between {min_duration} and {max_duration} seconds
-4. If duration is invalid, adjust your timestamps until it is valid
-
-EXAMPLES OF INVALID CLIPS (DO NOT DO THESE):
-- A clip with start=10, end=14 (duration: 4 seconds) - TOO SHORT
-- A clip with start=50, end=180 (duration: 130 seconds) - TOO LONG
-
-FINAL VERIFICATION CHECKLIST (MANDATORY):
-- Count your highlights: MUST BE EXACTLY {num_highlights}
-- MATHEMATICAL CHECK: Verify ALL durations by computing (end - start) for each clip
-- ENSURE ALL durations are between {min_duration} and {max_duration} seconds
-- Use continuous clips whenever possible
-- Do not include any text outside the JSON structure
-- Do not include explanations - ONLY valid JSON'''
+RESPONSE MUST BE PURE JSON — DO NOT INCLUDE EXPLANATIONS OR NOTES.
+"""
 
     for attempt in range(max_retries):
         try:
@@ -351,7 +340,7 @@ FINAL VERIFICATION CHECKLIST (MANDATORY):
             
             response = client.chat.completions.create(
                 model="gpt-4o-mini",
-                temperature=0.1,  # Lower temperature for more deterministic results
+                temperature=0.3,  # Lower temperature for more deterministic results
                 response_format={"type": "json_object"},  # Force JSON response format
                 messages=[
                     {"role": "system", "content": system_prompt},

@@ -29,7 +29,7 @@ function ClipPreview() {
             const querySnapshot = await getDocs(videosRef);
     
             let sanitizedTitle = videoTitle 
-                ? videoTitle.replace(/[^\w\s]/gi, "").trim() 
+                ? videoTitle.replace(/[^\w\s-]/gi, "").trim()
                 : null;
     
             let originalTitle = videoTitle || null;
@@ -39,7 +39,7 @@ function ClipPreview() {
                     const videoData = doc.data();
                     
                     if (videoData.title) {
-                        let title = videoData.title.replace(/[^\w\s]/gi, "").trim();
+                        let title = videoData.title.replace(/[^\w\s-]/gi, "").trim();
                         
                         if (!sanitizedTitle) {
                             sanitizedTitle = title;
@@ -63,7 +63,7 @@ function ClipPreview() {
                 processedClips: processedClips || [],
                 timestamp: serverTimestamp(),
                 videoTitle: originalTitle,
-                videoURL: videoURL
+                videoURL: videoURL,
             });
     
             console.log("Clip details saved successfully!");
@@ -136,7 +136,9 @@ function ClipPreview() {
                     clipKey: selectedClip.key,
                     selectedFeatures: selectedFeatures,
                     videoURL: videoURL,
-                    userEmail: user?.email
+                    userEmail: user?.email,
+                    timestamp: serverTimestamp(),
+                    
                 }),
             });
     

@@ -4,6 +4,8 @@ from googleapiclient.errors import HttpError
 from urllib.parse import urlparse, parse_qs
 import boto3
 import yt_dlp
+import whisper
+import tempfile
 import logging
 from rest_framework import status
 from rest_framework.permissions import AllowAny
@@ -16,6 +18,7 @@ from django.conf import settings
 from django.views.decorators.csrf import csrf_exempt
 import subprocess
 from moviepy.editor import VideoFileClip
+from botocore.exceptions import ClientError
 logger = logging.getLogger(__name__)
 import json
 import re
@@ -58,107 +61,218 @@ def process_short_form_video(request):
             video_url = data.get("videoURL")
             clip_length = data.get("clipLength")
             clip_count = data.get("clipCount")
-            user_email = data.get("userEmail")  # Get user email from the request
+            user_email = data.get("userEmail")
             
-            # Debugging log
             logger.info(f"Received video URL: {video_url}, Clip Length: {clip_length}, Clip Count: {clip_count}")
 
             # Validate input
             if not video_url:
                 return JsonResponse({"error": "Missing required parameter: videoURL"}, status=400)
             
-            # Convert clip_count to int if it exists, otherwise use default
+            # Parse clip parameters
             try:
-                clip_count = int(clip_count) if clip_count else 3  # Default to 3 clips
+                clip_count = int(clip_count) if clip_count else 3
             except (ValueError, TypeError):
                 logger.warning(f"Invalid clipCount: {clip_count}, using default of 3")
                 clip_count = 3
             
-            # Handle clip_length
-            if not clip_length:
-                clip_length = "auto"  # Default to auto if not provided
+            if clip_length == "auto" or not clip_length:
+                clip_length = "auto"
+            else:
+                try:
+                    clip_length = int(clip_length)
+                except (ValueError, TypeError):
+                    logger.warning(f"Invalid clipLength: {clip_length}, using 'auto'")
+                    clip_length = "auto"
             
-            # Call the process_video function directly
+            # Check video length using yt-dlp
+            video_id = extract_youtube_id(video_url)
+            if not video_id:
+                return JsonResponse({"error": "Invalid YouTube URL"}, status=400)
+            
+            # Try to get video duration with yt-dlp
+            try:
+                duration = get_video_duration_yt_dlp(video_url)
+                
+                if duration is None:
+                    logger.warning("Could not determine video length. Proceeding with caution.")
+                elif clip_length != "auto" and clip_count > 0:
+                    required_duration = clip_length * clip_count
+                    if duration < required_duration:
+                        error_message = (
+                            f"Video duration ({duration} seconds) is insufficient for "
+                            f"{clip_count} clips of {clip_length} seconds each "
+                            f"(requires {required_duration} seconds)"
+                        )
+                        logger.error(error_message)
+                        return JsonResponse({"error": error_message}, status=400)
+                
+                logger.info(f"Video duration check passed: {duration} seconds")
+            except Exception as e:
+                logger.error(f"Error checking video duration: {e}")
+                # Continue without duration check if it fails
+            
+            # Process the video
             clips = process_video(video_url, clip_length, clip_count, MEDIA_ROOT)
 
-            if clips:
-                # Initialize S3Uploader
-                s3_uploader = S3Uploader(
-                    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
-                    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
-                    bucket_name=settings.AWS_STORAGE_BUCKET_NAME,
-                    region=settings.AWS_S3_REGION_NAME
-                )
-
-                # Get user ID from the request
-                user_id = request.user.sub if request.user.is_authenticated else "anonymous"
-                
-                # Upload each clip to S3 and get S3 URLs
-                s3_clip_urls = []
-                for idx, clip in enumerate(clips):
-                    local_file_path = os.path.join(MEDIA_ROOT, clip["clip_path"])
-                    video_id = f"clip_{idx}_{int(time.time())}"
-                    s3_key = s3_uploader.get_user_video_key(user_id, video_id)
-                    
-                    # Upload to S3
-                    upload_result = s3_uploader.upload_file(local_file_path, s3_key)
-                    
-                    if upload_result["success"]:
-                        s3_clip_urls.append({
-                            "url": upload_result["url"],
-                            "key": upload_result["key"]
-                        })
-                    else:
-                        logger.error(f"Failed to upload clip to S3: {upload_result['error']}")
-                
-                # Debugging log
-                logger.info(f"Generated S3 clip URLs: {s3_clip_urls}")
-
-                # Send email notification if user email is provided
-                if user_email and s3_clip_urls:
-                    try:
-                        # Construct email subject and message
-                        subject = "Your Short-Form Video Processing is Complete"
-                        
-                        # Construct the message body
-                        message = f"Hello,\n\nYour video has been successfully processed into {len(s3_clip_urls)} short-form clips.\n\n"
-                        
-                        # Add clip URLs
-                        message += "Your clips are available at the following links:\n"
-                        for i, clip_data in enumerate(s3_clip_urls, 1):
-                            message += f"Clip {i}: {clip_data['url']}\n"
-                        
-                        message += f"\nClip Length: {clip_length}\n"
-                        message += "\nThank you for using our service!\n"
-                        
-                        # Send email
-                        from_email = settings.DEFAULT_FROM_EMAIL
-                        send_mail(subject, message, from_email, [user_email], fail_silently=False)
-                        
-                        # Log success
-                        logger.info(f"Email notification sent to {user_email}")
-                        
-                    except Exception as e:
-                        logger.error(f"Error sending email notification: {e}")
-
-                # Return a successful response with the S3 clip URLs
-                return JsonResponse({
-                    "message": "Video processed successfully",
-                    "clips": s3_clip_urls
-                }, status=200)
-            else:
-                # Handle case where no clips were generated
+            if not clips:
                 return JsonResponse({"error": "Failed to generate clips from the video"}, status=500)
+            
+            # Initialize S3Uploader
+            s3_uploader = S3Uploader(
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                bucket_name=settings.AWS_STORAGE_BUCKET_NAME,
+                region=settings.AWS_S3_REGION_NAME
+            )
+
+            # Get user ID from the request
+            user_id = request.user.sub if request.user.is_authenticated else "anonymous"
+            
+            # Upload clips to S3
+            s3_clip_urls = []
+            for idx, clip in enumerate(clips):
+                local_file_path = os.path.join(MEDIA_ROOT, clip["clip_path"])
+                clip_id = f"clip_{idx}_{int(time.time())}"
+                s3_key = s3_uploader.get_user_video_key(user_id, clip_id)
+                
+                upload_result = s3_uploader.upload_file(local_file_path, s3_key)
+                
+                if upload_result["success"]:
+                    s3_clip_urls.append({
+                        "url": upload_result["url"],
+                        "key": upload_result["key"]
+                    })
+                else:
+                    logger.error(f"Failed to upload clip to S3: {upload_result['error']}")
+            
+            logger.info(f"Generated S3 clip URLs: {s3_clip_urls}")
+
+            # Send email notification if user email is provided
+            if user_email and s3_clip_urls:
+                try:
+                    # Email details
+                    subject = "Your Short-Form Video Processing is Complete"
+                    message = f"Hello,\n\nYour video has been successfully processed into {len(s3_clip_urls)} short-form clips.\n\n"
+                    message += "Your clips are available at the following links:\n"
+                    
+                    for i, clip_data in enumerate(s3_clip_urls, 1):
+                        message += f"Clip {i}: {clip_data['url']}\n"
+                    
+                    message += f"\nClip Length: {clip_length}\n"
+                    message += "\nThank you for using our service!\n"
+                    
+                    from_email = settings.DEFAULT_FROM_EMAIL
+                    send_mail(subject, message, from_email, [user_email], fail_silently=False)
+                    
+                    logger.info(f"Email notification sent to {user_email}")
+                    
+                except Exception as e:
+                    logger.error(f"Error sending email notification: {e}")
+
+            # Return success response
+            return JsonResponse({
+                "message": "Video processed successfully",
+                "clips": s3_clip_urls
+            }, status=200)
 
         except json.JSONDecodeError:
             logger.error("Invalid JSON data in request body")
             return JsonResponse({"error": "Invalid JSON data in request body"}, status=400)
         except Exception as e:
             logger.error(f"Error in process_short_form_video: {e}")
-            return JsonResponse({"error": "Internal Server Error"}, status=500)
+            return JsonResponse({"error": str(e)}, status=500)
     else:
         return JsonResponse({"error": "Only POST requests are allowed"}, status=405)
 
+
+def extract_youtube_id(url):
+    """Extract YouTube video ID from a URL"""
+    patterns = [
+        r'(?:youtube\.com\/(?:[^\/\n\s]+\/\S+\/|(?:v|e(?:mbed)?)\/|\S*?[?&]v=)|youtu\.be\/)([a-zA-Z0-9_-]{11})',
+    ]
+    
+    for pattern in patterns:
+        match = re.search(pattern, url)
+        if match:
+            return match.group(1)
+    
+    return None
+
+
+def get_video_duration_yt_dlp(url):
+    """
+    Get video duration using yt-dlp (more reliable than pytube)
+    """
+    try:
+        # Check if yt-dlp is installed
+        try:
+            subprocess.run(['yt-dlp', '--version'], capture_output=True, check=True)
+        except (subprocess.SubprocessError, FileNotFoundError):
+            logger.warning("yt-dlp not found. Installing...")
+            subprocess.run(['pip', 'install', 'yt-dlp'], check=True)
+        
+        # Get duration using yt-dlp
+        cmd = ['yt-dlp', '--get-duration', '--skip-download', url]
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        
+        # Get the output
+        duration_str = result.stdout.strip()
+        logger.info(f"yt-dlp duration result: {duration_str}")
+        
+        # Parse the duration string (format: HH:MM:SS or MM:SS)
+        parts = duration_str.split(':')
+        
+        if len(parts) == 3:  # HH:MM:SS
+            hours, minutes, seconds = map(int, parts)
+            return hours * 3600 + minutes * 60 + seconds
+        elif len(parts) == 2:  # MM:SS
+            minutes, seconds = map(int, parts)
+            return minutes * 60 + seconds
+        elif len(parts) == 1 and parts[0].isdigit():  # SS
+            return int(parts[0])
+        else:
+            logger.warning(f"Could not parse duration: {duration_str}")
+            return None
+            
+    except Exception as e:
+        logger.error(f"Error getting duration with yt-dlp: {e}")
+        
+        # Try fallback method using ffprobe if available
+        try:
+            return get_video_duration_ffprobe(url)
+        except Exception as ffprobe_error:
+            logger.error(f"Fallback ffprobe method also failed: {ffprobe_error}")
+            return None
+
+
+def get_video_duration_ffprobe(url):
+    """
+    Fallback: Get video duration using ffprobe if available
+    """
+    try:
+        # Check if ffprobe is available
+        subprocess.run(['ffprobe', '-version'], capture_output=True, check=True)
+        
+        # Use ffprobe to get duration
+        cmd = [
+            'ffprobe', 
+            '-v', 'error', 
+            '-show_entries', 'format=duration', 
+            '-of', 'default=noprint_wrappers=1:nokey=1', 
+            url
+        ]
+        
+        result = subprocess.run(cmd, capture_output=True, text=True, check=True)
+        duration_str = result.stdout.strip()
+        
+        # Convert to seconds
+        duration = float(duration_str)
+        return int(duration)
+        
+    except Exception as e:
+        logger.error(f"Error getting duration with ffprobe: {e}")
+        return None
 def get_video_resolution(video_path):
     """Gets the resolution (width x height) of the video."""
     with VideoFileClip(video_path) as video:
@@ -283,26 +397,40 @@ def seo(request):
             # Handle Video Quality feature - LOCAL processing
             upscaled_video_path = None
             if "Video Quality" in selected_features and localpath:
-                try:
-                    # Only proceed with upscaling if the resolution is less than or equal to 480p (height <= 480)
-                    if video_resolution and video_resolution[1] <= 480:
-                        upscaled_video_path = process_media(
-                            file_path=localpath,
-                            ai_model="RealESR_Gx4",
-                            resize_factor=100,  # Example value, adjust as needed
-                            output_path=None,  # Use default output path
-                            cpu_number=4,
-                            keep_frames=False,
-                        )
-                        results["video_upscaling"] = {
-                            "processed_file_path": upscaled_video_path,
-                            "status": "success"
-                        }
-                    else:
-                        results["video_upscaling"] = {"message": "Resolution is greater than 480p, skipping upscaling."}
-                except Exception as e:
-                    logger.error(f"Error in video upscaling: {e}")
-                    results["video_upscaling"] = {"error": str(e)}
+                    try:
+                        # Only proceed with upscaling if the resolution is less than or equal to 480p (height <= 480)
+                        if video_resolution and video_resolution[1] <= 480:
+                            # Calculate target upscale factor to reach ~1080p
+                            original_height = video_resolution[1]
+                            target_height = 1080
+                            upscale_factor = min(4, target_height / original_height)  # Cap at 4x (max model capability)
+                            
+                            # Adjust resize factor to feed appropriate resolution to AI
+                            # We want to feed the largest possible input that won't exceed GPU memory
+                            resize_factor = min(100, (100 * 4 / upscale_factor))  # Adjust based on upscale needs
+                            
+                            upscaled_video_path = process_media(
+                                file_path=localpath,
+                                ai_model="RealESR_Gx4",  # Good for general upscaling
+                                resize_factor=resize_factor,
+                                output_path=None,
+                                cpu_number=4,
+                                keep_frames=False,
+                            )
+                            
+                            results["video_upscaling"] = {
+                                "processed_file_path": upscaled_video_path,
+                                "original_resolution": f"{video_resolution[0]}x{video_resolution[1]}",
+                                "target_resolution": "1920x1080",
+                                "status": "success"
+                            }
+                        else:
+                            results["video_upscaling"] = {
+                                "message": f"Resolution {video_resolution[0]}x{video_resolution[1]} is greater than 480p, skipping upscaling."
+                            }
+                    except Exception as e:
+                        logger.error(f"Error in video upscaling: {e}")
+                        results["video_upscaling"] = {"error": str(e)}
 
             # Handle Noise Reduction feature - LOCAL processing
             enhanced_audio_path = None
@@ -904,6 +1032,45 @@ def download_video(request):
     if not video_id:
         return JsonResponse({"error": "Invalid YouTube URL"}, status=400)
 
+    # Check video duration before downloading
+    try:
+        # Create a YoutubeDL object with info extraction only
+        ydl_info_opts = {
+            'quiet': True,
+            'no_warnings': True,
+            'skip_download': True,  # Don't download, just get info
+            'logger': logger,
+        }
+        
+        with yt_dlp.YoutubeDL(ydl_info_opts) as ydl:
+            info = ydl.extract_info(video_url, download=False)
+            
+            # Get duration in seconds
+            duration = info.get('duration', 0)
+            
+            # Check if video is between 5 minutes and 1 hour
+            min_duration = 1 # 5 minutes in seconds
+            max_duration = 60 * 60  # 1 hour in seconds
+            
+            if duration < min_duration:
+                return JsonResponse({
+                    "error": "VIDEO_TOO_SHORT",
+                    "message": "Video must be longer than 5 minutes"
+    }, status=400)
+
+            if duration > max_duration:
+                    return JsonResponse({
+                        "error": "VIDEO_TOO_LONG",
+                        "message": "Video must be shorter than 1 hour"
+                    }, status=400)
+                
+    except yt_dlp.utils.DownloadError as e:
+        logger.error(f"Info extraction failed: {str(e)}")
+        return JsonResponse({"error": f"Could not validate video duration: {str(e)}"}, status=500)
+    except Exception as e:
+        logger.exception("Unexpected error during video validation")
+        return JsonResponse({"error": f"Validation error: {str(e)}"}, status=500)
+
     # Define the local save path using MEDIA_ROOT
     sanitized_filename = sanitize_filename(f"{video_id}.mp4")
     local_file_path = os.path.join(settings.MEDIA_ROOT, "videos", sanitized_filename)
@@ -954,12 +1121,12 @@ def download_video(request):
     # If file doesn't exist locally, proceed with download
     try:
         ydl_opts = {
-    'format': 'bv*[height<=1080]+ba/b[height<=1080]',
-    'merge_output_format': 'mp4',
-    'outtmpl': local_file_path,
-    'quiet': False,
-    'logger': logger,
-}
+            'format': 'bv*[height<=1080]+ba/b[height<=1080]',
+            'merge_output_format': 'mp4',
+            'outtmpl': local_file_path,
+            'quiet': False,
+            'logger': logger,
+        }
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             logger.debug(f"Downloading video: {video_url}")

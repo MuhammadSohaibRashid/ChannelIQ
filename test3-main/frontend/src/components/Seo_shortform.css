@@ -1,4 +1,4 @@
-/* Main layout */
+* Main layout */
 .seo-app {
   background-color: #0f0f25;
   color: #ffffff;
@@ -7,58 +7,101 @@
   flex-direction: column;
 }
 
-/* Header styles */
-.header {
+.dashboard-header {
   display: flex;
   justify-content: space-between;
   align-items: center;
-  padding: 20px 0px;
-  background-color: rgba(15, 15, 37, 0.95);
+  padding: 0.75rem 1.5rem;
+  background: rgba(15, 15, 37, 0.95);
+  border-bottom: 1px solid rgba(143, 58, 245, 0.3);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(10px);
+  position: sticky;
+  top: 0;
+  z-index: 100;
+}
+
+.logo-container {
+  cursor: pointer;
+  display: flex;
+  align-items: center;
 }
 
 .logo {
-  font-size: 24px;
+  font-size: 1.5rem;
   margin: 0;
+  letter-spacing: -0.5px;
 }
 
-.bold {
-  font-weight: bold;
+.logo-bold {
+  font-weight: 700;
 }
 
-.highlight {
+.logo-highlight {
   color: #8f3af5;
+  font-weight: 700;
 }
 
-.nav {
+.header-right {
   display: flex;
-  gap: 20px;
   align-items: center;
-  padding: 0px 45px;
 }
 
-.nav a {
-  color: #ffffff;
-  text-decoration: none;
-  font-size: 16px;
+.user-profile {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  background: rgba(255, 255, 255, 0.05);
+  border-radius: 2rem;
+  padding: 0.25rem 0.75rem 0.25rem 0.25rem;
+  border: 1px solid rgba(143, 58, 245, 0.3);
 }
 
-.nav button {
-  padding: 8px 16px;
-  border-radius: 6px;
-  font-size: 14px;
-  cursor: pointer;
-}
-
-.sign-in {
-  background: transparent;
+.user-avatar {
+  width: 2rem;
+  height: 2rem;
+  border-radius: 50%;
+  object-fit: cover;
   border: 2px solid #8f3af5;
+}
+
+.username {
+  font-weight: 500;
   color: #ffffff;
 }
 
-.sign-up {
-  background-color: #8f3af5;
+.logout-button {
+  background: rgba(255, 255, 255, 0.1);
   border: none;
+  border-radius: 1rem;
   color: #ffffff;
+  padding: 0.35rem 0.75rem;
+  font-size: 0.75rem;
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.logout-button:hover {
+  background: rgba(255, 255, 255, 0.2);
+}
+
+/* Login Button for Non-Authenticated Users */
+.login-button {
+  background: #8f3af5;
+  border: none;
+  border-radius: 1.5rem;
+  color: #ffffff;
+  padding: 0.5rem 1.25rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.3s ease;
+  box-shadow: 0 4px 12px rgba(143, 58, 245, 0.3);
+}
+
+.login-button:hover {
+  background: #a452ff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 16px rgba(143, 58, 245, 0.4);
 }
 
 /* Main content */
@@ -67,21 +110,25 @@
   padding: 20px 40px;
 }
 
-.clipper-btn {
-  background-color: #8f3af5;
-  color: white;
-  border: none;
-  padding: 12px 24px;
-  border-radius: 8px;
-  font-size: 16px;
-  cursor: pointer;
-  margin-bottom: 20px;
-  transition: all 0.3s ease;
+/* Improved content header styling */
+.content-header-seo {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 1.5rem;
+  background: rgba(15, 15, 37, 0.7);
+  border: 1px solid rgba(143, 58, 245, 0.25);
+  border-radius: 12px;
+  box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2);
+  backdrop-filter: blur(10px);
+  margin: 25px 0;
 }
 
-.clipper-btn:hover {
-  background-color: #7c3aed;
-  transform: translateY(-2px);
+.button-container {
+  display: flex;
+  justify-content: center;
+  gap: 15px;
+  width: 100%;
 }
 
 /* Clip section layout */
@@ -91,34 +138,36 @@
   gap: 30px;
 }
 
-.clip-container {
-  background-color: rgba(255, 255, 255, 0.05);
-  border-radius: 12px;
-  padding: 20px;
-  margin-bottom: 30px;
-  width: 100%;
-}
 
+/* Update clip content wrapper styling */
 .clip-content-wrapper {
   display: flex;
-  gap: 30px;
+  gap: 20px;
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 20px;
 }
 
-/* Video/Media styles */
+/* Video/Media styles update */
 .media-preview, .video-container {
-  flex: 0 0 40%;
-  max-width: 500px;
+  flex: 0 0 30%;
+  max-height: 662px;
+  background-color: rgba(15, 15, 37, 0.8);
+  border-radius: 8px;
+  padding: 15px;
 }
 
 .video-player, .preview-video {
-  width: 100%;
+  width: 300px;
+  height: 632px;
   border-radius: 8px;
   background-color: #1a1a3a;
+  object-fit: cover;
 }
 
 .preview-image {
   width: 100%;
-  max-height: 280px;
+  max-height: 300px;
   object-fit: cover;
   border-radius: 8px;
   background-color: #1a1a3a;
@@ -166,12 +215,14 @@
   margin: 0;
 }
 
-/* Responsive design */
-@media (max-width: 968px) {
-  .clip-section,
-  .clip-content-wrapper {
+@media (max-width: 768px) {
+
+  
+  .button-container {
     flex-direction: column;
+    align-items: center;
   }
+
 
   .media-preview, .video-container {
     max-width: 100%;
@@ -188,30 +239,69 @@
     justify-content: center;
   }
 }
+
 .action-buttons {
   display: flex;
-  gap: 10px;
+  justify-content: center;
+  gap: 15px;
   margin-top: 20px;
+  margin-bottom: 10px;
 }
 
-.youtube-upload-btn {
-  background-color: #ff0000;
-  color: white;
-  padding: 10px 20px;
+/* Compare Results Button */
+.comparison-btn, .youtube-auth-btn {
+  padding: 12px 24px;
+  font-size: 16px;
+  font-weight: 600;
   border: none;
-  border-radius: 4px;
+  border-radius: 8px;
   cursor: pointer;
-  font-weight: bold;
-  transition: background-color 0.3s;
+  transition: all 0.3s ease;
+  min-width: 180px;
+  box-shadow: 0 4px 10px rgba(0, 0, 0, 0.2);
 }
 
+/* Purple button */
+.comparison-btn {
+  background: #8f3af5;
+  color: white;
+}
+
+.comparison-btn:hover {
+  background: #a452ff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(143, 58, 245, 0.3);
+}
+
+.comparison-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(143, 58, 245, 0.3);
+}
 .youtube-upload-btn:hover {
-  background-color: #cc0000;
+  background: #a452ff;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(143, 58, 245, 0.3);
 }
 
-.youtube-upload-btn.uploading {
-  background-color: #999;
-  cursor: not-allowed;
+.youtube-upload-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(143, 58, 245, 0.3);
+}
+
+.youtube-auth-btn {
+  background: #ff0000;
+  color: white;
+}
+
+.youtube-auth-btn:hover {
+  background: #e60000;
+  transform: translateY(-2px);
+  box-shadow: 0 6px 15px rgba(255, 0, 0, 0.3);
+}
+
+.youtube-auth-btn:active {
+  transform: translateY(0);
+  box-shadow: 0 2px 8px rgba(255, 0, 0, 0.3);
 }
 
 .upload-status {
@@ -243,13 +333,6 @@
   text-decoration: underline;
 }
 
-.youtube-auth-note {
-  margin-top: 15px;
-  padding: 10px 15px;
-  background-color: #f5f5f5;
-  border-radius: 4px;
-  font-size: 0.9em;
-}
 
 .auth-link {
   margin-left: 5px;
@@ -259,4 +342,95 @@
 
 .auth-link:hover {
   text-decoration: underline;
+}
+
+.copy-btn {
+  background: transparent;
+  border: none;
+  color: #8f3af5;
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+}
+
+.copy-btn:hover {
+  background: rgba(143, 58, 245, 0.1);
+}
+
+.copy-btn:active {
+  transform: scale(0.95);
+}
+
+.copy-btn svg {
+  stroke: currentColor;
+}
+
+/* Add this to your CSS file */
+
+/* Container for SEO data */
+.seo-container {
+  background-color: rgba(15, 15, 37, 0.8);
+  border-radius: 12px;
+  padding: 25px;
+  margin-bottom: 20px;
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  backdrop-filter: blur(5px);
+}
+
+/* Update SEO box styling for the title and copy button layout */
+.seo-box {
+  background-color: rgba(255, 255, 255, 0.05);
+  border-radius: 8px;
+  padding: 15px;
+  position: relative;
+}
+
+.seo-box h2 {
+  color: #8f3af5;
+  font-size: 18px;
+  margin-bottom: 10px;
+  display: inline-block;
+}
+
+.seo-box .copy-btn {
+  position: absolute;
+  right: 15px;
+  top: 15px;
+  background: transparent;
+  border: none;
+  color: #8f3af5;
+  cursor: pointer;
+  padding: 5px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 4px;
+  transition: all 0.2s ease;
+}
+
+.seo-box .copy-btn:hover {
+  background: rgba(143, 58, 245, 0.1);
+}
+
+.seo-box .copy-btn:active {
+  transform: scale(0.95);
+}
+
+.seo-box .copy-btn svg {
+  stroke: currentColor;
+}
+
+.seo-box p {
+  color: #ffffff;
+  line-height: 1.5;
+  margin: 0;
+  padding-right: 30px; /* Make space for the copy button */
 }

@@ -42,3 +42,4 @@ pyannote.audio
 google_auth_oauthlib
 deep_translator
 firebase-admin  
+SpeechRecognition
