@@ -1,5 +1,5 @@
 import React, { useContext, useEffect } from "react";
-import { useNavigate } from "react-router-dom";
+import { useNavigate, Link } from "react-router-dom";
 import { signInWithPopup } from "firebase/auth";
 import { auth, provider, db } from "../Firebase";
 import { arrayUnion, doc, setDoc, updateDoc } from "firebase/firestore";
@@ -159,10 +159,8 @@ const LoginPage = () => {
               <span>or</span>
             </div>
 
-           
-
             <div className="terms-text">
-              By continuing, you agree to <span className="highlight">Channel-IQ's</span> Terms of Service.
+              By continuing, you agree to <Link to="/terms" className="highlight">Channel-IQ's</Link> Terms of Service.
               <br />
             </div>
           </div>

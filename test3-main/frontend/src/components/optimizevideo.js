@@ -220,27 +220,42 @@ const OptimizeVideo = () => {
       {/* Navbar with User Session */}
        {/* Header */}
        <header className="dashboard-header">
-                <div className="logo-container" onClick={() => navigate("/")}>
-                    <h1 className="logo">
-                        <span className="logo-bold">Channel-</span>
-                        <span className="logo-highlight">IQ</span>
-                    </h1>
-                </div>
+  <div className="logo-container" onClick={() => navigate("/")}>
+    <h1 className="logo">
+      <span className="logo-bold">Channel-</span>
+      <span className="logo-highlight">IQ</span>
+    </h1>
+  </div>
 
-                <div className="header-right">
-                    {user ? (
-                        <div className="user-profile">
-                            <img src={user.picture} alt="User" className="user-avatar" />
-                            <span className="username">{user.name}</span>
-                            <button className="logout-button" onClick={logout}>Logout</button>
-                        </div>
-                    ) : (
-                        <button className="login-button" onClick={() => navigate("/login")}>
-                            Login
-                        </button>
-                    )}
-                </div>
-            </header>
+  <div className="header-right">
+    <a 
+      className="nav-link" 
+      href="/terms" // or use navigate("/terms") if you're using React Router
+      style={{ marginRight: '1rem', textDecoration: 'none', color: 'var(--color-text)', fontWeight: 500 }}
+    >
+      Terms & Services
+    </a>
+    <a 
+        className="nav-link" 
+        href="/videos" // Add this new link
+        style={{ marginRight: '1rem', textDecoration: 'none', color: 'var(--color-text)', fontWeight: 500 }}
+    >
+        Videos
+    </a>
+
+    {user ? (
+      <div className="user-profile">
+        <img src={user.picture} alt="User" className="user-avatar" />
+        <span className="username">{user.name}</span>
+        <button className="logout-button" onClick={logout}>Logout</button>
+      </div>
+    ) : (
+      <button className="login-button" onClick={() => navigate("/login")}>
+        Login
+      </button>
+    )}
+  </div>
+</header>
 
       <div className="optimized-video-page">
         <header className="page-header">

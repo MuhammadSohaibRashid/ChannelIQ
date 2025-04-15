@@ -258,13 +258,16 @@ OUTPUT FORMAT (STRICT JSON ONLY):
     {{
       "segments": [
         {{ "start": <start_time>, "end": <end_time>, "duration": <duration> }},
-        {{ "start": <start_time>, "end": <end_time>, "duration": <duration> }}
+        {{ "start": <start_time>, "end": <end_time>, "duration": <duration> }},
+        ... //Continue as needed
       ],
       "total_duration": <total_combined_duration>,
       "content": "Brief description of segments"
     }}
   ]
 }}
+This is the format for one continous clip and one segmented clip, if u see both clips need to be segmented then use segmented format for both and if u see both clips need to be continous then use continous format for both and if u see one clip is continous and one clip is segmented then use continous format for first clip and segmented format for second clip.
+for segments dont do very short jumps, only do jumps when there is a long pause or when the speaker is not speaking(u know the speaker is not speaking if the transcription dont have anything from a certain time like transcription starts from 4 then the speaker isnt speaking in that time period), and if you see that the speaker is not speaking for a long time then only do the jump and if you see that the speaker is speaking continously then dont do any jumps.
 
 If segments offer better clarity or quality, you may use segmented format consistently across all highlights.
 
@@ -320,6 +323,7 @@ OUTPUT FORMAT (STRICT JSON ONLY):
   ]
 }}
 This is the format for one continous clip and one segmented clip, if u see both clips need to be segmented then use segmented format for both and if u see both clips need to be continous then use continous format for both and if u see one clip is continous and one clip is segmented then use continous format for first clip and segmented format for second clip.
+for segments dont do very short jumps, only do jumps when there is a long pause or when the speaker is not speaking(u know the speaker is not speaking if the transcription dont have anything from a certain time like transcription starts from 4 then the speaker isnt speaking in that time period), and if you see that the speaker is not speaking for a long time then only do the jump and if you see that the speaker is speaking continously then dont do any jumps.
 FINAL CHECKLIST:
 1. TOTAL: Exactly {num_highlights} highlights ✓
 2. TIMING: All durations within {min_duration}–{max_duration} ✓

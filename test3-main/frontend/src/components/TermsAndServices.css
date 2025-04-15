@@ -1,0 +1,62 @@
+.terms-container {
+  max-width: 850px;
+  margin: 2rem auto;
+  padding: 2rem;
+  background-color: #101020;
+  color: #f0f0f0cc;
+  line-height: 1.6;
+  font-size: 0.95rem;
+  border-radius: 10px;
+  box-shadow: 0 0 20px rgba(126, 34, 206, 0.15);
+  overflow-y: auto;
+  max-height: calc(100vh - 4rem);
+  scrollbar-width: thin;
+  scrollbar-color: var(--color-primary-light) transparent;
+}
+
+/* Custom Scrollbar for Webkit Browsers */
+.terms-container::-webkit-scrollbar {
+  width: 6px;
+}
+
+.terms-container::-webkit-scrollbar-thumb {
+  background-color: var(--color-primary-light);
+  border-radius: 4px;
+}
+
+.terms-container h1 {
+  text-align: center;
+  margin-bottom: 1.5rem;
+  font-size: 2rem;
+  color: var(--color-primary);
+}
+
+.terms-container section {
+  margin-bottom: 1.2rem;
+}
+
+.terms-container h2,
+.terms-container h3 {
+  color: var(--color-primary-light);
+  margin-bottom: 0.5rem;
+  font-size: 1.2rem;
+}
+
+.terms-container p {
+  margin-bottom: 1rem;
+}
+.close-button {
+  position: absolute;
+  top: 1.2rem;
+  right: 1.5rem;
+  background: transparent;
+  border: none;
+  font-size: 1.5rem;
+  cursor: pointer;
+  color: #fff;
+  transition: color 0.3s ease;
+}
+
+.close-button:hover {
+  color: var(--color-primary);
+}

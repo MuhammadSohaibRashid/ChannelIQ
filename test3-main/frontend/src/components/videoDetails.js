@@ -118,18 +118,6 @@ const VideoDetails = ({ onClose, videoTitle }) => {
           } else if (videoData.shortForm) {
             setActiveFormType("shortForm");
           }
-          
-          // Set initial tab based on available data
-          if (videoData.longForm?.seo || videoData.shortForm?.seo) {
-            // If SEO data is available, we can start with SEO tab
-            const hasSEOFeature = 
-              (videoData.longForm?.selectedFeatures || []).some(f => f.toLowerCase() === 'seo') ||
-              (videoData.shortForm?.selectedFeatures || []).some(f => f.toLowerCase() === 'seo');
-            
-            if (hasSEOFeature) {
-              setActiveTab("seo");
-            }
-          }
         }
 
       } catch (error) {
@@ -272,10 +260,6 @@ const VideoDetails = ({ onClose, videoTitle }) => {
   // Selected Features
   const selectedFeaturesForCurrentForm = currentFormData?.selectedFeatures || [];
 
-  // Convert features to lowercase for consistent comparison
-  const lowerCaseFeatures = selectedFeaturesForCurrentForm.map(f => f.toLowerCase());
-  const hasSeoFeature = lowerCaseFeatures.includes('seo');
-
   // --- Render Main Modal ---
   return (
     <div
@@ -362,15 +346,6 @@ const VideoDetails = ({ onClose, videoTitle }) => {
           >
             Optimization
           </button>
-          {/* Show SEO tab only if SEO is in the selected features */}
-          {hasSeoFeature && (
-            <button
-              className={`tab-button ${activeTab === "seo" ? "active" : ""}`}
-              onClick={() => setActiveTab("seo")}
-            >
-              SEO
-            </button>
-          )}
           {/* Add Clips tab if clips are available */}
           {generatedClips.length > 0 && (
             <button
@@ -537,97 +512,6 @@ const VideoDetails = ({ onClose, videoTitle }) => {
               )}
             </div>
           )} {/* End Optimization Tab */}
-
-          {/* --- SEO Tab --- */}
-          {activeTab === "seo" && hasSeoFeature && (
-            <div className="seo-tab">
-              {/* Form Type Sub-Tabs */}
-              <div className="form-type-tabs">
-                {longForm && longForm.seo && ( // Only show tab if longForm data with SEO exists
-                  <button
-                    className={`form-type-button ${activeFormType === "longForm" ? "active" : ""}`}
-                    onClick={() => setActiveFormType("longForm")}
-                    disabled={!longForm || !longForm.seo}
-                  >
-                    Long Form SEO
-                  </button>
-                )}
-                {shortForm && shortForm.seo && ( // Only show tab if shortForm data with SEO exists
-                  <button
-                    className={`form-type-button ${activeFormType === "shortForm" ? "active" : ""}`}
-                    onClick={() => setActiveFormType("shortForm")}
-                    disabled={!shortForm || !shortForm.seo}
-                  >
-                    Short Form SEO
-                  </button>
-                )}
-              </div>
-
-              {/* Long Form SEO Content */}
-              {activeFormType === "longForm" && longForm?.seo && (
-                <div className="form-type-content">
-                  <h3>Long-Form SEO Details</h3>
-                  <div className="seo-details info-grid">
-                    <div className="info-item">
-                      <strong>Title:</strong>
-                      <p>{longFormSeoTitle}</p>
-                    </div>
-                    <div className="info-item">
-                      <strong>Description:</strong>
-                      <p>{longFormSeoDescription}</p>
-                    </div>
-                    <div className="info-item">
-                      <strong>Keywords:</strong>
-                      <p>{longFormSeoKeywords}</p>
-                    </div>
-                    <div className="info-item full-width">
-                      <strong>Tags:</strong>
-                      <div className="tags-container">
-                        {typeof longForm.seo.tags === 'string' ? (
-                          <p>{longForm.seo.tags}</p>
-                        ) : Array.isArray(longForm.seo.tags) && longForm.seo.tags.length > 0 ? (
-                          longForm.seo.tags.map((tag, index) => (
-                            <span key={index} className="tag">{tag}</span>
-                          ))
-                        ) : (
-                          <p>No tags specified.</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Short Form SEO Content */}
-              {activeFormType === "shortForm" && shortForm?.seo && (
-                <div className="form-type-content">
-                  <h3>Short-Form SEO Details</h3>
-                  <div className="seo-details info-grid">
-                    <div className="info-item">
-                      <strong>Caption:</strong>
-                      <p>{shortForm.seo?.caption || shortForm.caption || "N/A"}</p>
-                    </div>
-                    <div className="info-item">
-                      <strong>Hashtags:</strong>
-                      <p>{shortForm.seo?.hashtags || shortForm.hashtags || "N/A"}</p>
-                    </div>
-                    <div className="info-item full-width">
-                      <strong>Trending Topics:</strong>
-                      <div className="tags-container">
-                        {Array.isArray(shortForm.seo?.trendingTopics) && shortForm.seo.trendingTopics.length > 0 ? (
-                          shortForm.seo.trendingTopics.map((topic, index) => (
-                            <span key={index} className="tag trending">{topic}</span>
-                          ))
-                        ) : (
-                          <p>No trending topics specified.</p>
-                        )}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              )}
-            </div>
-          )} {/* End SEO Tab */}
 
           {/* --- Clips Tab --- */}
           {activeTab === "clips" && generatedClips.length > 0 && (

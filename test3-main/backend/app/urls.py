@@ -16,4 +16,6 @@ urlpatterns = [
     path('youtube/upload/', views.upload_youtube_video, name='youtube-upload'),
     path('auth/google-login/', views.google_login, name='google-login'),
     path('youtube/get-auth-url/', views.get_youtube_auth_url, name='youtube_auth_url'),
+    path('youtube/update-seo/', views.update_youtube_seo, name='update_youtube_seo'),
+    
 ]

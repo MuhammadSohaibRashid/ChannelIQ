@@ -17,6 +17,7 @@ from bs4 import BeautifulSoup
 import tiktoken
 import numpy as np
 from datetime import timedelta
+import torch
 
 class EnhancedYouTubeSEOGenerator:
     def __init__(self, youtube_api_key: Optional[str] = None, openai_api_key: Optional[str] = None):
@@ -113,7 +114,7 @@ class EnhancedYouTubeSEOGenerator:
             audio.export(wav_file, format="wav")
 
             # Load Whisper model - using larger model for better accuracy
-            model = WhisperModel("medium", device="cpu")
+            model = WhisperModel("medium", device="cuda" if torch.cuda.is_available() else "cpu")
             
             # Transcribe with improved settings and get word timestamps
             segments, _ = model.transcribe(wav_file, beam_size=5, vad_filter=True)
@@ -164,7 +165,7 @@ class EnhancedYouTubeSEOGenerator:
             audio.export(wav_file, format="wav")
 
             # Using larger model for better accuracy
-            model = WhisperModel("medium", device="cpu")
+            model = WhisperModel("medium", device="cuda" if torch.cuda.is_available() else "cpu")
             segments, _ = model.transcribe(wav_file, beam_size=5, vad_filter=True)
             
             # Create full transcript text
@@ -433,7 +434,7 @@ class EnhancedYouTubeSEOGenerator:
     - Viewer engagement
     - Watch time
     - Overall performance
-
+    Give SEO in english always
     Apply proven YouTube SEO strategies that balance:
     - Clickability (high CTR without being clickbait)
     - Searchability (right keywords in the right places)
@@ -503,11 +504,13 @@ class EnhancedYouTubeSEOGenerator:
         "tags": ["tag1", "tag2", ... "tag20"],
         "keywords": ["keyword1", "keyword2", ...]
     }}
-
+    dont add double ** if u want to make bold something only place one * before and after the word
+    also if u think u cant make relevant chapters for the video then dont add chapters in the description
+    and dont add call to action heading in the description
     IMPORTANT: For the description field, use literal newline characters (\\n) where line breaks should appear.
     """
             
-
+            print("Prompt: ",prompt)
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",  # Using the most capable model
                 messages=[
@@ -586,23 +589,13 @@ class EnhancedYouTubeSEOGenerator:
             raise ValidationError(f"Error processing video: {str(e)}")
             
     def process_video_shortform_enhanced(self, 
-                                  file_path: str, 
-                                  original_video_details: Dict[str, Any] = None,
-                                  original_transcript: Dict[str, Any] = None,
-                                  competitor_videos: List[Dict[str, Any]] = None,
-                                  comments: List[str] = None) -> Dict[str, Any]:
+                              file_path: str, 
+                              original_video_details: Dict[str, Any] = None,
+                              original_transcript: Dict[str, Any] = None,
+                              competitor_videos: List[Dict[str, Any]] = None,
+                              comments: List[str] = None) -> Dict[str, Any]:
         """
         Enhanced method to process a short-form video with context from the original video.
-        
-        Args:
-            file_path: Path to the shortform video file
-            original_video_details: Details of the original video (if available)
-            original_transcript: Transcript of the original video (if available)
-            competitor_videos: List of competitor videos (if available)
-            comments: List of comments from the original video (if available)
-            
-        Returns:
-            Dict with optimized SEO content
         """
         try:
             # Validate file
@@ -610,26 +603,27 @@ class EnhancedYouTubeSEOGenerator:
             
             # Get transcript for the shortform video
             shortform_transcript = self.transcribe_video(file_path)
-            print("Transcript: ",shortform_transcript)
-            # Extract additional context from original video data if available
-            video_title = original_video_details.get('title', '') if original_video_details else ''
-            video_description = original_video_details.get('description', '') if original_video_details else ''
-            original_tags = original_video_details.get('tags', []) if original_video_details else []
             
+            # Don't extract tags separately - use them directly from original_video_details
+            # Remove this line:
+            # original_tags = original_video_details.get('tags', []) if original_video_details else []
+            print("competitor_videos: ",competitor_videos)
+            print("original_video_details: ",original_video_details)
+
             # Prepare competitor analysis
             competitor_analysis = ""
             if competitor_videos:
                 competitor_analysis = "Top competitor videos:"
-                for idx, video in enumerate(competitor_videos[:3], 5):
-                    competitor_analysis += f"{idx}. Title: {video.get('title', 'Unknown')}"
-                    competitor_analysis += f"   Tags: {', '.join(video.get('tags', [])[:10])}"
-                    competitor_analysis += f"   Views: {video.get('view_count', 0)}"
+                for idx, video in enumerate(competitor_videos[:3], 1):  # Changed to start at 1 instead of 5
+                    competitor_analysis += f"{idx}. Title: {video.get('title', 'Unknown')}\n"
+                    competitor_analysis += f"   Tags: {', '.join(video.get('tags', [])[:10])}\n"
+                    competitor_analysis += f"   Views: {video.get('view_count', 0)}\n"
             
             # Prepare comment insights
             comment_insights = ""
             if comments:
                 sample_comments = comments[:30]
-                comment_insights = "Sample comments:" + "".join(f"- {comment}" for comment in sample_comments)
+                comment_insights = "Sample comments:\n" + "\n".join(f"- {comment}" for comment in sample_comments)
             
             # Get original transcript summary if available
             original_transcript_text = ""
@@ -642,71 +636,73 @@ class EnhancedYouTubeSEOGenerator:
             
             client = openai.OpenAI(api_key=self.openai_api_key)
             
+            # Build the prompt using the full original_video_details structure directly like in long-form
             prompt = f"""
-Analyze this short-form video clip and create SEO-optimized metadata for maximum visibility, engagement, and virality.
+    Analyze this short-form video clip and create SEO-optimized metadata for maximum visibility, engagement, and virality.
+    Give SEO in english always 
 
-SHORTFORM VIDEO TRANSCRIPT:
-{shortform_transcript["text"]}
+    SHORTFORM VIDEO TRANSCRIPT:
+    {shortform_transcript["text"]}
 
-ORIGINAL VIDEO CONTEXT:
-- Title: {video_title}
-- Description (truncated): {video_description}...
-- Tags: {', '.join(original_tags)}
-{f"- ORIGINAL TRANSCRIPT EXCERPT:{original_transcript_text}" if original_transcript_text else ""}
+    ORIGINAL VIDEO CONTEXT:
+    - Title: {original_video_details.get('title', '') if original_video_details else ''}
+    - Description (truncated): {original_video_details.get('description', '')[:200] if original_video_details else ''}...
+    - Tags: {', '.join(original_video_details.get('tags', [])) if original_video_details else ''}
+    {f"- ORIGINAL TRANSCRIPT EXCERPT: {original_transcript_text}" if original_transcript_text else ""}
 
-COMPETITOR INSIGHTS:
-{competitor_analysis}
+    COMPETITOR INSIGHTS:
+    {competitor_analysis}
 
-COMMENT INSIGHTS:
-{comment_insights}
+    COMMENT INSIGHTS:
+    {comment_insights}
 
-CREATE:
-1. **TITLE**:
-   - One attention-grabbing title under 60 characters
-   - Use curiosity hooks, emotional triggers, or trending phrases like “POV”, “Wait for it”, “Watch until end”
-   - Make it specific, clickable, and aligned with the content
+    CREATE:
+    1. **TITLE**:
+    - One attention-grabbing title under 60 characters
+    - Use curiosity hooks, emotional triggers, or trending phrases like "POV", "Wait for it", "Watch until end"
+    - Make it specific, clickable, and aligned with the content
 
-2. **DESCRIPTION** (200–300 characters preferred, max 150 visible characters):
-   - Hook viewers immediately with keywords in the first 80 characters
-   - Include emojis to boost visual appeal 🎯🔥📲
-   - Summarize the content’s value or emotional appeal
-   - Include a clear CTA (like, follow, save, share, comment, etc.)
+    2. **DESCRIPTION** (200–300 characters preferred, max 150 visible characters):
+    - Hook viewers immediately with keywords in the first 80 characters
+    - Include emojis to boost visual appeal 🎯🔥📲
+    - Summarize the content's value or emotional appeal
+    - Include a clear CTA (like, follow, save, share, comment, etc.)
 
-3. **HASHTAGS** (15–20 total):
-   - Use a strategic mix:
-     * 3–5 viral/trending hashtags in the niche
-     * 2–3 platform-specific high-performance hashtags
-     * 4–6 content-specific descriptive hashtags
-     * 3–4 broader category hashtags
-   - List in order: from most specific to most general
-   - Avoid overly saturated tags
-   - Format as a list of strings, include "#" in tags (e.g. "#funny")
+    3. **HASHTAGS** (15–20 total):
+    - Use a strategic mix:
+        * 3–5 viral/trending hashtags in the niche
+        * 2–3 platform-specific high-performance hashtags
+        * 4–6 content-specific descriptive hashtags
+        * 3–4 broader category hashtags
+    - List in order: from most specific to most general
+    - Avoid overly saturated tags
+    - Format as a list of strings, include "#" in tags (e.g. "#funny")
 
-4. **KEYWORDS** (5–7 total):
-   - Include 2–3 primary keywords (core topics/themes)
-   - 3–4 secondary/supporting keywords (niche terms or related concepts)
+    4. **KEYWORDS** (5–7 total):
+    - Include 2–3 primary keywords (core topics/themes)
+    - 3–4 secondary/supporting keywords (niche terms or related concepts)
 
-5. **CONTENT STRATEGY NOTE**:
-   - Provide 1–2 sentences on why this format/content works in the niche
-   - Reference hooks, pacing, topic angles, or style trends that resonate with audiences
+    5. **CONTENT STRATEGY NOTE**:
+    - Provide 1–2 sentences on why this format/content works in the niche
+    - Reference hooks, pacing, topic angles, or style trends that resonate with audiences
 
-FORMAT RESPONSE AS JSON:
-{{
-    "title": "Engaging title under 60 chars",
-    "description": "Hook-rich description with emojis and CTA",
-    "hashtags": ["#tag1", "#tag2", "#tag3", ...],
-    "keywords": ["keyword1", "keyword2", "keyword3", ...],
-    "content_strategy": "Brief note on why this short-form content performs well"
-}}
+    FORMAT RESPONSE AS JSON:
+    {{
+        "title": "Engaging title under 60 chars",
+        "description": "Hook-rich description with emojis and CTA",
+        "hashtags": ["#tag1", "#tag2", "#tag3", ...],
+        "keywords": ["keyword1", "keyword2", "keyword3", ...],
+        "content_strategy": "Brief note on why this short-form content performs well"
+    }}
 
-OPTIMIZATION STRATEGY:
-- Match tone and topic with original long-form video
-- Prioritize high-CTR structures: surprise, curiosity, controversy, relatability
-- Focus on trending topics, sounds, and platform-native language
-- Keep it high-impact and scroll-stopping from the first 3 seconds
-- Tailor keywords and tags to platform-specific discovery systems
-"""
-            print("Prompt: ",prompt)
+    OPTIMIZATION STRATEGY:
+    - Match tone and topic with original long-form video
+    - Prioritize high-CTR structures: surprise, curiosity, controversy, relatability
+    - Focus on trending topics, sounds, and platform-native language
+    - Keep it high-impact and scroll-stopping from the first 3 seconds
+    - Tailor keywords and tags to platform-specific discovery systems
+    """
+            print("Prompt: ", prompt)
 
             completion = client.chat.completions.create(
                 model="gpt-4o-mini",

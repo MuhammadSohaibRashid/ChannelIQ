@@ -12,9 +12,9 @@ function SEO({ videoThumbnail }) {
   const location = useLocation();
   const navigate = useNavigate();
   const { user, logout } = useContext(UserContext); // Access User Context
-
-  const { videoTitle, message, results, videoURL, localVideoPath, selectedFeatures } = location.state || {};
   
+  const { videoTitle, message, results, videoURL, localVideoPath, selectedFeatures } = location.state || {};
+  const isSeoOnly = selectedFeatures?.length === 1 && selectedFeatures?.includes("SEO");
   // ✅ Debugging Logs
   console.log("🔍 Debug: location.state =>", location.state);
   console.log(results);
@@ -53,7 +53,92 @@ function SEO({ videoThumbnail }) {
       </React.Fragment>
     ));
   };
-
+  const handleUploadToYouTube = async () => {
+    if (!user) {
+      setUploadStatus({
+        success: false,
+        message: "You must be logged in to upload to YouTube"
+      });
+      return;
+    }
+  
+    if (!authToken) {
+      setUploadStatus({
+        success: false,
+        message: "Authentication token not found. Please log in again."
+      });
+      return;
+    }
+  
+    setUploading(true);
+    setUploadStatus(null);
+  
+    try {
+      // Get the video URL
+      const videoUrl = getVideoUrl();
+      
+      // Create form data for file upload
+      const formData = new FormData();
+      
+      formData.append('video_url', videoUrl);
+      formData.append('title', title || "My Video");
+      formData.append('description', description || "");
+      formData.append('tags', tags || "");
+      
+      if (results?.s3_upload?.key) {
+        formData.append('s3_key', results.s3_upload.key);
+      }
+      
+      console.log("Uploading with token:", authToken);
+      
+      // Make the API request to upload the video
+      const uploadResponse = await fetch("http://127.0.0.1:8000/api/youtube/upload/", {
+        method: "POST",
+        headers: {
+          Authorization: `Token ${authToken}`
+        },
+        body: formData,
+      });
+      
+      const data = await uploadResponse.json();
+      
+      // Check if we need to re-authorize YouTube
+      if (!uploadResponse.ok) {
+        if (uploadResponse.status === 401 && data.needs_auth) {
+          // YouTube auth needs renewal
+          setHasYoutubeAuth(false);
+          setUploadStatus({
+            success: false,
+            message: data.detail || "Your YouTube authorization has expired. Please reconnect your YouTube account.",
+            needsAuth: true
+          });
+          return;
+        }
+        throw new Error(`Upload failed with status: ${uploadResponse.status} ${uploadResponse.statusText}`);
+      }
+      
+      if (data.success) {
+        setUploadStatus({
+          success: true,
+          message: `Video uploaded successfully! Video ID: ${data.video_id}`,
+          videoId: data.video_id
+        });
+      } else {
+        setUploadStatus({
+          success: false,
+          message: data.error || "Failed to upload video"
+        });
+      }
+    } catch (error) {
+      console.error("Upload error:", error);
+      setUploadStatus({
+        success: false,
+        message: `An error occurred during upload: ${error.message}`
+      });
+    } finally {
+      setUploading(false);
+    }
+  };
   // ✅ Firebase function to save SEO data
   const saveDataToDB = async (user, locationState) => {
     if (!user) {
@@ -312,10 +397,10 @@ function SEO({ videoThumbnail }) {
       });
       return;
     }
-
+  
     setAuthorizing(true);
     setUploadStatus(null);
-
+  
     try {
       const authResponse = await fetch("http://127.0.0.1:8000/api/youtube/get-auth-url/", {
         method: "GET",
@@ -335,9 +420,60 @@ function SEO({ videoThumbnail }) {
         // Open the authorization URL in a new window
         const authWindow = window.open(authData.auth_url, "YouTubeAuth", "width=600,height=700");
         
+        // Add event listener for window closing
+        let windowClosedManually = false;
+        const windowClosedInterval = setInterval(() => {
+          if (authWindow && authWindow.closed) {
+            clearInterval(windowClosedInterval);
+            windowClosedManually = true;
+            
+            // When window is manually closed, check auth status one more time
+            setTimeout(async () => {
+              try {
+                const finalCheckResponse = await fetch("http://127.0.0.1:8000/api/youtube/check-auth/", {
+                  method: "GET",
+                  headers: {
+                    Authorization: `Token ${authToken}`,
+                  },
+                });
+                
+                const finalCheckData = await finalCheckResponse.json();
+                
+                if (finalCheckData.has_youtube_auth) {
+                  setHasYoutubeAuth(true);
+                  setUploadStatus({
+                    success: true,
+                    message: "YouTube account successfully connected!"
+                  });
+                } else {
+                  setHasYoutubeAuth(false);
+                  setUploadStatus({
+                    success: false,
+                    message: "YouTube authorization was not completed. Please try again."
+                  });
+                }
+              } catch (error) {
+                console.error("Error in final auth check:", error);
+                setHasYoutubeAuth(false);
+                setUploadStatus({
+                  success: false,
+                  message: "Failed to verify YouTube authorization. Please try again."
+                });
+              } finally {
+                setAuthorizing(false);
+              }
+            }, 2000); // Wait 2 seconds after window closure before final check
+          }
+        }, 500);
+        
         // Poll to check if auth is complete
         const checkAuthInterval = setInterval(async () => {
           try {
+            if (windowClosedManually) {
+              clearInterval(checkAuthInterval);
+              return;
+            }
+            
             const checkResponse = await fetch("http://127.0.0.1:8000/api/youtube/check-auth/", {
               method: "GET",
               headers: {
@@ -348,8 +484,8 @@ function SEO({ videoThumbnail }) {
             const checkData = await checkResponse.json();
             
             if (checkData.has_youtube_auth) {
-              // Auth is complete, close polling and window
               clearInterval(checkAuthInterval);
+              clearInterval(windowClosedInterval);
               setHasYoutubeAuth(true);
               setUploadStatus({
                 success: true,
@@ -359,6 +495,7 @@ function SEO({ videoThumbnail }) {
               if (authWindow && !authWindow.closed) {
                 authWindow.close();
               }
+              setAuthorizing(false);
             }
           } catch (error) {
             console.error("Error checking auth status:", error);
@@ -368,10 +505,14 @@ function SEO({ videoThumbnail }) {
         // Cleanup interval after 5 minutes (maximum waiting time)
         setTimeout(() => {
           clearInterval(checkAuthInterval);
-          setUploadStatus({
-            success: false,
-            message: "Authorization timed out. Please try again."
-          });
+          clearInterval(windowClosedInterval);
+          if (!windowClosedManually) {
+            setUploadStatus({
+              success: false,
+              message: "Authorization timed out. Please try again."
+            });
+            setAuthorizing(false);
+          }
         }, 300000); // 5 minutes
       } else {
         throw new Error("No authorization URL received from server");
@@ -382,7 +523,6 @@ function SEO({ videoThumbnail }) {
         success: false,
         message: `Failed to authorize: ${error.message}`
       });
-    } finally {
       setAuthorizing(false);
     }
   };
@@ -395,7 +535,7 @@ function SEO({ videoThumbnail }) {
       });
       return;
     }
-
+  
     if (!authToken) {
       setUploadStatus({
         success: false,
@@ -403,7 +543,7 @@ function SEO({ videoThumbnail }) {
       });
       return;
     }
-
+  
     if (!hasYoutubeAuth) {
       setUploadStatus({
         success: false,
@@ -411,7 +551,7 @@ function SEO({ videoThumbnail }) {
       });
       return;
     }
-
+  
     // Check if we have a valid video URL
     if (!videoURL || !videoURL.includes("youtube.com")) {
       setUploadStatus({
@@ -420,10 +560,10 @@ function SEO({ videoThumbnail }) {
       });
       return;
     }
-
+  
     setUploading(true);
     setUploadStatus(null);
-
+  
     try {
       // Extract video ID from URL
       let videoId = "";
@@ -432,18 +572,18 @@ function SEO({ videoThumbnail }) {
       } else if (videoURL.includes("youtu.be/")) {
         videoId = videoURL.split("youtu.be/")[1].split("?")[0];
       }
-
+  
       if (!videoId) {
         throw new Error("Could not extract video ID from URL");
       }
-
+  
       // Create form data with updated SEO info
       const formData = new FormData();
       formData.append("video_id", videoId);
       formData.append("title", seoData.title || title);
       formData.append("description", seoData.description || description);
       formData.append("tags", seoData.tags?.join(",") || "");
-
+  
       // Make API call to update video metadata
       const updateResponse = await fetch("http://127.0.0.1:8000/api/youtube/update-seo/", {
         method: "POST",
@@ -452,20 +592,58 @@ function SEO({ videoThumbnail }) {
         },
         body: formData,
       });
-
-      if (!updateResponse.ok) {
+      
+      // Handle different response status codes
+      if (updateResponse.status === 403) {
+        // Handle ownership error
+        const errorData = await updateResponse.json();
+        setUploadStatus({
+          success: false,
+          message: errorData.error || "You can only update SEO for videos you own"
+        });
+        return;
+      } else if (updateResponse.status === 500) {
+        // Check if the error might be related to token expiration
+        const errorData = await updateResponse.text();
+        if (errorData.includes("invalid_grant") || errorData.includes("token expired") || errorData.includes("Token has been expired or revoked")) {
+          // Token has expired, we need to re-authenticate
+          setHasYoutubeAuth(false);
+          setUploadStatus({
+            success: false,
+            message: "Your YouTube authorization has expired. Please reconnect your YouTube account.",
+            needsAuth: true
+          });
+          return;
+        } else {
+          throw new Error("Server error occurred while updating SEO");
+        }
+      } else if (!updateResponse.ok) {
+        const data = await updateResponse.json();
+        
+        // Check if we need to re-authorize YouTube
+        if (updateResponse.status === 401 && data.needs_auth) {
+          // YouTube auth needs renewal
+          setHasYoutubeAuth(false);
+          setUploadStatus({
+            success: false,
+            message: data.detail || "Your YouTube authorization has expired. Please reconnect your YouTube account.",
+            needsAuth: true
+          });
+          return;
+        }
+        
         throw new Error(`Update failed with status: ${updateResponse.status} ${updateResponse.statusText}`);
       }
-
+  
       const data = await updateResponse.json();
-
+  
       if (data.success) {
         setUploadStatus({
           success: true,
           message: "Video SEO updated successfully!"
         });
         
-        // ✅ After successful YouTube update, update component state
+        // After successful YouTube update, update component state
         setSeoMessage("SEO data updated successfully on YouTube!");
       } else {
         setUploadStatus({
@@ -475,10 +653,24 @@ function SEO({ videoThumbnail }) {
       }
     } catch (error) {
       console.error("Update error:", error);
-      setUploadStatus({
-        success: false,
-        message: `An error occurred during update: ${error.message}`
-      });
+      
+      // Check if error message contains token expiration indicators
+      if (error.message && (
+          error.message.includes("invalid_grant") || 
+          error.message.includes("token expired") || 
+          error.message.includes("Token has been expired or revoked"))) {
+        setHasYoutubeAuth(false);
+        setUploadStatus({
+          success: false,
+          message: "Your YouTube authorization has expired. Please reconnect your YouTube account.",
+          needsAuth: true
+        });
+      } else {
+        setUploadStatus({
+          success: false,
+          message: `An error occurred during update: ${error.message}`
+        });
+      }
     } finally {
       setUploading(false);
     }
@@ -489,27 +681,42 @@ function SEO({ videoThumbnail }) {
       {/* Navbar with User Session */}
        {/* Header */}
        <header className="dashboard-header">
-                <div className="logo-container" onClick={() => navigate("/")}>
-                    <h1 className="logo">
-                        <span className="logo-bold">Channel-</span>
-                        <span className="logo-highlight">IQ</span>
-                    </h1>
-                </div>
+  <div className="logo-container" onClick={() => navigate("/")}>
+    <h1 className="logo">
+      <span className="logo-bold">Channel-</span>
+      <span className="logo-highlight">IQ</span>
+    </h1>
+  </div>
 
-                <div className="header-right">
-                    {user ? (
-                        <div className="user-profile">
-                            <img src={user.picture} alt="User" className="user-avatar" />
-                            <span className="username">{user.name}</span>
-                            <button className="logout-button" onClick={logout}>Logout</button>
-                        </div>
-                    ) : (
-                        <button className="login-button" onClick={() => navigate("/login")}>
-                            Login
-                        </button>
-                    )}
-                </div>
-            </header>
+  <div className="header-right">
+    <a 
+      className="nav-link" 
+      href="/terms" // or use navigate("/terms") if you're using React Router
+      style={{ marginRight: '1rem', textDecoration: 'none', color: 'var(--color-text)', fontWeight: 500 }}
+    >
+      Terms & Services
+    </a>
+    <a 
+        className="nav-link" 
+        href="/videos" // Add this new link
+        style={{ marginRight: '1rem', textDecoration: 'none', color: 'var(--color-text)', fontWeight: 500 }}
+    >
+        Videos
+    </a>
+
+    {user ? (
+      <div className="user-profile">
+        <img src={user.picture} alt="User" className="user-avatar" />
+        <span className="username">{user.name}</span>
+        <button className="logout-button" onClick={logout}>Logout</button>
+      </div>
+    ) : (
+      <button className="login-button" onClick={() => navigate("/login")}>
+        Login
+      </button>
+    )}
+  </div>
+</header>
 
       <main className="main-content">
        
@@ -566,34 +773,34 @@ function SEO({ videoThumbnail }) {
             </div>
 
             <div className="action-buttons">
-              {/* Compare Results Button */}
-                        <button
-            className="comparison-btn-seo"
-            onClick={() =>
-              navigate("/comparison", {
-                state: {
-                  results,
-                  selectedFeatures,
-                  videoURL,
-                  localVideoPath,
-                  s3Key: results.s3_upload?.key || null, // Add S3 key
-                  processedS3Url: getVideoUrl(), // Get the current video URL
-                  seoData: {
-                    ...seoData,
-                    original_title: seoData.original_title || title,
-                    original_description: seoData.original_description || description,
-                    original_tags: seoData.original_tags || seoData.tags,
-                    original_keywords: seoData.original_keywords || seoData.keywords,
-                  },
-                },
-              })
-            }
-          >
-            Compare Results
-          </button>
+                {/* Compare Results Button */}
+                <button
+                  className="comparison-btn-seo"
+                  onClick={() =>
+                  navigate("/comparison", {
+                    state: {
+                      results,
+                      selectedFeatures,
+                      videoURL,
+                      localVideoPath,
+                      s3Key: results.s3_upload?.key || null,
+                      processedS3Url: getVideoUrl(),
+                      seoData: {
+                        ...seoData,
+                        original_title: seoData.original_title || title,
+                        original_description: seoData.original_description || description,
+                        original_tags: seoData.original_tags || seoData.tags,
+                        original_keywords: seoData.original_keywords || seoData.keywords,
+                      },
+                    },
+                  })
+                }
+              >
+                Compare Results
+              </button>
 
-              {/* YouTube Update SEO Button */}
-              {videoURL && videoURL.includes("youtube.com") && (
+              {/* YouTube Buttons */}
+              {videoURL && (
                 <>
                   {user && !hasYoutubeAuth ? (
                     <button 
@@ -604,33 +811,67 @@ function SEO({ videoThumbnail }) {
                       {authorizing ? "Authorizing..." : "Connect YouTube"}
                     </button>
                   ) : (
-                    <button 
-                      className={`youtube-update-seo-btn ${uploading ? 'uploading' : ''}`}
-                      onClick={handleUpdateSEO}
-                      disabled={uploading || !user || !hasYoutubeAuth}
-                    >
-                      {uploading ? "Updating..." : "Update YouTube SEO"}
-                    </button>
+                    <>
+                      {isSeoOnly ? (
+                        <button 
+                          className={`youtube-update-seo-btn ${uploading ? 'uploading' : ''}`}
+                          onClick={handleUpdateSEO}
+                          disabled={uploading || !user || !hasYoutubeAuth}
+                        >
+                          {uploading ? "Updating..." : "Update YouTube SEO"}
+                        </button>
+                      ) : (
+                        <button 
+                          className={`youtube-upload-btn ${uploading ? 'uploading' : ''}`}
+                          onClick={handleUploadToYouTube}
+                          disabled={uploading || !user || !hasYoutubeAuth}
+                          style={{
+                            backgroundColor: '#8f3af5',
+                            color: 'white',
+                            border: 'none',
+                            padding: '12px 24px',
+                            marginTop: '20px',
+                            borderRadius: '8px',
+                            cursor: 'pointer',
+                            fontSize: '16px',
+                            fontWeight: '600',
+                            transition: 'all 0.3s ease',
+                            boxShadow: '0 4px 8px rgba(0, 0, 0, 0.2)'
+                          }}
+                        >
+                          {uploading ? "Uploading..." : "Upload to YouTube"}
+                        </button>
+                      )}
+                    </>
                   )}
                 </>
               )}
-            </div>
-
-            {/* Upload Status Message */}
-            {uploadStatus && (
+            </div>{uploadStatus && (
               <div className={`upload-status ${uploadStatus.success ? 'success' : 'error'}`}>
                 <p>{uploadStatus.message}</p>
-              </div>
-            )}
-
-            {/* YouTube Authorization Message */}
-            {user && !hasYoutubeAuth && videoURL && videoURL.includes("youtube.com") && !authorizing && (
-              <div className="youtube-auth-note">
-                
+                {uploadStatus.success && uploadStatus.videoId && (
+                  <a 
+                    href={`https://www.youtube.com/watch?v=${uploadStatus.videoId}`}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="view-video-link"
+                  >
+                    View on YouTube
+                  </a>
+                )}
+                {uploadStatus.needsAuth && (
+                  <button
+                    className="youtube-auth-btn-seo"
+                    onClick={handleAuthorizeYouTube}
+                    disabled={authorizing}
+                  >
+                    Connect YouTube Again
+                  </button>
+                )}
               </div>
             )}
           </div>
-        </div>
+          </div>
       </main>
     </div>
   );

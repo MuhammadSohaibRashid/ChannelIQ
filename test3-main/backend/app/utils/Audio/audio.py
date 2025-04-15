@@ -454,7 +454,45 @@ class AudioEnhancer:
             )
         except Exception:
             return audio
-
+    def _apply_volume_normalization(self, audio: np.ndarray, sr: int, target_lufs: float = -18.0) -> np.ndarray:
+        """
+        Apply volume normalization to audio segment using LUFS normalization.
+        
+        Args:
+            audio (np.ndarray): Audio segment to normalize
+            sr (int): Sample rate
+            target_lufs (float): Target loudness in LUFS (Loudness Units Full Scale)
+            
+        Returns:
+            np.ndarray: Normalized audio segment
+        """
+        try:
+            # Create meter
+            meter = pyln.Meter(sr)
+            
+            # Measure current loudness
+            current_loudness = meter.integrated_loudness(audio)
+            
+            # Prevent infinite gain for silent audio
+            if current_loudness < -70:
+                return audio
+                
+            # Calculate gain needed
+            gain_db = target_lufs - current_loudness
+            
+            # Apply gain with safe limiting
+            gain_linear = 10 ** (gain_db / 20)
+            normalized = audio * gain_linear
+            
+            # Safe clipping prevention
+            if np.max(np.abs(normalized)) > 0.99:
+                normalized = np.clip(normalized, -0.99, 0.99)
+                
+            return normalized
+            
+        except Exception as e:
+            print(f"Warning: Error in volume normalization: {str(e)}")
+            return audio  # Return original if normalization fails
     def _apply_volume_normalization_file(self, input_path: str, output_path: str) -> None:
         """Apply volume normalization directly to an audio file."""
         try:

@@ -7,6 +7,7 @@ import yt_dlp
 import whisper
 import tempfile
 import logging
+import torch
 from rest_framework import status
 from rest_framework.permissions import AllowAny
 from google.auth.transport import requests
@@ -19,6 +20,7 @@ from django.views.decorators.csrf import csrf_exempt
 import subprocess
 from moviepy.editor import VideoFileClip
 from botocore.exceptions import ClientError
+from django.views.decorators.http import require_POST
 logger = logging.getLogger(__name__)
 import json
 import re
@@ -599,8 +601,8 @@ def optimize_shortform(request):
             clip_path = data.get("clipPath")
             clip_key = data.get("clipKey")
             selected_features = data.get("selectedFeatures", [])
-            video_url = data.get("videoURL", None)  # Get the optional video URL
-            user_email = data.get("userEmail")  # Get user email from the request
+            video_url = data.get("videoURL", None)
+            user_email = data.get("userEmail")
 
             # Debugging log
             logger.info(f"Received clip for optimization: {clip_path}, Key: {clip_key}, Selected Features: {selected_features}, Video URL: {video_url}")
@@ -608,6 +610,101 @@ def optimize_shortform(request):
             if not clip_path or not clip_key:
                 return JsonResponse({"error": "No clip path or key provided"}, status=400)
 
+            # Initialize S3 uploader with credentials from settings
+            s3_uploader = S3Uploader(
+                aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                bucket_name=settings.AWS_STORAGE_BUCKET_NAME,
+                region=settings.AWS_S3_REGION_NAME
+            )
+            
+            # Download the clip from S3 to local media folder
+            local_dir = os.path.join(settings.MEDIA_ROOT, 'temp_downloads')
+            os.makedirs(local_dir, exist_ok=True)
+            
+            filename = os.path.basename(clip_key)
+            local_clip_path = os.path.join(local_dir, filename)
+            
+            # Download file from S3
+            try:
+                s3_client = boto3.client(
+                    's3',
+                    aws_access_key_id=settings.AWS_ACCESS_KEY_ID,
+                    aws_secret_access_key=settings.AWS_SECRET_ACCESS_KEY,
+                    region_name=settings.AWS_S3_REGION_NAME
+                )
+                s3_client.download_file(settings.AWS_STORAGE_BUCKET_NAME, clip_key, local_clip_path)
+                logger.info(f"Successfully downloaded clip from S3 to {local_clip_path}")
+            except Exception as e:
+                logger.error(f"Error downloading clip from S3: {e}")
+                return JsonResponse({"error": f"Failed to download clip from S3: {str(e)}"}, status=500)
+            
+            # Initialize results dictionary
+            results = {}
+            
+            # Check language if Captions feature is selected
+            if "Captions" in selected_features:
+                try:
+                    def detect_audio_language(file_path):
+                        """
+                        Detect the language of the audio in a video file
+                        Returns language code (e.g., 'en' for English)
+                        """
+                        try:
+                            # Create a temporary file for the audio
+                            temp_audio_path = file_path.replace('.mp4', '_temp_audio.wav')
+                            
+                            # Extract audio from video
+                            command = [
+                                'ffmpeg',
+                                '-i', file_path,
+                                '-vn',  # Skip video
+                                '-acodec', 'pcm_s16le',
+                                '-ar', '16000',
+                                '-ac', '1',
+                                temp_audio_path,
+                                '-y'  # Overwrite if exists
+                            ]
+                            
+                            subprocess.run(command, check=True, capture_output=True)
+                            
+                            # Use whisper to detect language
+                            import whisper
+                            model = whisper.load_model("tiny")  # Using tiny model just for language detection
+                            result = model.transcribe(temp_audio_path, task="translate")
+                            
+                            # Clean up
+                            if os.path.exists(temp_audio_path):
+                                os.remove(temp_audio_path)
+                                
+                            return result.get("language", "unknown")
+                        except Exception as e:
+                            logger.error(f"Error detecting language: {e}")
+                            return "unknown"  # Default to unknown on error
+                    
+                    # Detect language of the clip
+                    detected_language = detect_audio_language(local_clip_path)
+                    
+                    if detected_language.lower() != "en":
+                        # Clean up the downloaded file
+                        if os.path.exists(local_clip_path):
+                            os.remove(local_clip_path)
+                            
+                        # Return early with language error message
+                        return JsonResponse({
+                            "message": "Cannot process video with selected features.",
+                            "results": {
+                                "captions": {
+                                    "status": "language_error",
+                                    "detected_language": detected_language,
+                                    "message": f"Captions can only be applied to English content. Detected language: {detected_language}."
+                                }
+                            }
+                        }, status=200)
+                except Exception as e:
+                    logger.error(f"Error in language detection: {e}")
+                    # Continue with processing if language detection fails
+                    results["captions"] = {"error": f"Language detection error: {str(e)}"}
             # Sort features to ensure Video Quality comes before Noise Reduction
             feature_order = ["SEO", "Video Quality", "Noise Reduction", "Captions"]
             selected_features = sorted(
@@ -677,8 +774,7 @@ def optimize_shortform(request):
                                 except Exception as e:
                                     logger.warning(f"Non-critical error getting additional video context: {e}")
                             
-                            # Now process the shortform with enhanced context
-                            shortform_transcript = seo_generator.transcribe_video(current_clip_path)
+                            
                             
                             # Generate SEO content with combined context
                             seo_data = seo_generator.process_video_shortform_enhanced(
@@ -1200,15 +1296,49 @@ def check_auth(request):
     
     try:
         from .models import YouTubeAuth
+        import google.oauth2.credentials
+        import googleapiclient.discovery
+        from google.auth.exceptions import RefreshError
+        
         print(f"DEBUG: Checking YouTube auth for user {request.user.id}")
         youtube_auth = YouTubeAuth.objects.filter(user=request.user).first()
-        has_youtube_auth = bool(youtube_auth and youtube_auth.credentials)
-        print(f"DEBUG: YouTubeAuth exists: {bool(youtube_auth)}, has credentials: {has_youtube_auth}")
+        
+        if not youtube_auth or not youtube_auth.credentials:
+            print(f"DEBUG: No YouTube auth record or credentials found")
+            return Response({'has_youtube_auth': False})
+            
+        # Try to actually use the credentials to verify they're valid
+        try:
+            creds_data = youtube_auth.credentials
+            credentials = google.oauth2.credentials.Credentials(
+                token=creds_data.get('token'),
+                refresh_token=creds_data.get('refresh_token'),
+                token_uri=creds_data.get('token_uri'),
+                client_id=creds_data.get('client_id'),
+                client_secret=creds_data.get('client_secret'),
+                scopes=creds_data.get('scopes')
+            )
+            
+            # Create a YouTube service object and make a simple request
+            youtube = googleapiclient.discovery.build('youtube', 'v3', credentials=credentials)
+            # Make a minimal request that requires authentication
+            response = youtube.channels().list(part="snippet", mine=True).execute()
+            
+            print(f"DEBUG: YouTube credentials are valid")
+            return Response({'has_youtube_auth': True})
+            
+        except RefreshError as e:
+            # This happens when token is expired/revoked
+            print(f"DEBUG: YouTube token refresh error: {e}")
+            return Response({'has_youtube_auth': False, 'reason': 'token_expired'})
+            
+        except Exception as e:
+            print(f"DEBUG: Error validating YouTube credentials: {e}")
+            return Response({'has_youtube_auth': False, 'reason': 'validation_failed'})
+            
     except Exception as e:
         print(f"Error checking YouTube auth: {e}")
-        has_youtube_auth = False
-    
-    return Response({'has_youtube_auth': has_youtube_auth})
+        return Response({'has_youtube_auth': False, 'reason': 'server_error'})
 
 @api_view(['GET'])
 @permission_classes([IsAuthenticated])
@@ -1664,8 +1794,8 @@ def get_youtube_auth_url(request):
     
     # Return the authorization URL
     return Response({'auth_url': authorization_url})
-@api_view(['POST'])
-@permission_classes([IsAuthenticated])
+@api_view(['POST']) 
+@permission_classes([IsAuthenticated]) 
 def update_youtube_seo(request):
     """Update YouTube video SEO metadata"""
     user = request.user
@@ -1675,9 +1805,9 @@ def update_youtube_seo(request):
         from .models import YouTubeAuth
         youtube_auth = YouTubeAuth.objects.get(user=user)
         if not youtube_auth.credentials:
-            return Response({'error': 'YouTube authorization required'}, status=401)
+            return Response({'error': 'YouTube authorization required', 'needs_auth': True}, status=401)
     except YouTubeAuth.DoesNotExist:
-        return Response({'error': 'YouTube authorization required'}, status=401)
+        return Response({'error': 'YouTube authorization required', 'needs_auth': True}, status=401)
     
     # Get video ID and metadata
     video_id = request.POST.get('video_id')
@@ -1711,6 +1841,28 @@ def update_youtube_seo(request):
         
         if not response.get('items'):
             return Response({'error': 'Video not found or not accessible'}, status=404)
+        
+        # Check video ownership (verify the user owns this video)
+        # Get the authenticated user's channel ID
+        channels_response = youtube.channels().list(
+            part="id",
+            mine=True
+        ).execute()
+        
+        if not channels_response.get('items'):
+            return Response({'error': 'Could not retrieve your YouTube channel information'}, status=400)
+            
+        user_channel_id = channels_response['items'][0]['id']
+        
+        # Get the video's channel ID
+        video_channel_id = response['items'][0]['snippet'].get('channelId')
+        
+        # Compare the channel IDs to verify ownership
+        if user_channel_id != video_channel_id:
+            return Response({
+                'error': 'You can only update SEO for videos you own', 
+                'is_owner': False
+            }, status=403)
         
         # Prepare snippet with updated information
         snippet = response['items'][0]['snippet']
@@ -1749,9 +1901,52 @@ def update_youtube_seo(request):
             'message': 'Video SEO updated successfully',
             'video_id': video_id
         })
+    
+    except google.auth.exceptions.RefreshError as e:
+        # Handle token refresh errors (expired/revoked tokens)
+        import traceback
+        print(f"DEBUG: YouTube token refresh error: {str(e)}")
+        
+        # Mark the YouTube authentication as invalid
+        youtube_auth.is_authorized = False
+        youtube_auth.save()
+        
+        return Response({
+            'error': 'Your YouTube authorization has expired or been revoked', 
+            'needs_auth': True,
+            'detail': str(e)
+        }, status=401)
+    
+    except google.auth.exceptions.GoogleAuthError as e:
+        # Handle other Google Auth errors
+        import traceback
+        print(f"DEBUG: YouTube auth error: {str(e)}")
+        
+        return Response({
+            'error': 'Authentication error with YouTube', 
+            'needs_auth': True,
+            'detail': str(e)
+        }, status=401)
         
     except Exception as e:
         import traceback
         print(f"DEBUG: YouTube SEO update error: {str(e)}")
         print(traceback.format_exc())
+        
+        # Check if error is a 403 Forbidden (likely ownership issue)
+        error_str = str(e).lower()
+        if '403' in error_str and 'forbidden' in error_str:
+            return Response({
+                'error': 'You can only update SEO for videos you own',
+                'is_owner': False
+            }, status=403)
+        
+        # Check if the error message contains indicators of token problems
+        elif ('token' in error_str and ('expired' in error_str or 'revoked' in error_str or 'invalid' in error_str)) or 'invalid_grant' in error_str:
+            return Response({
+                'error': 'Your YouTube authorization has expired or been revoked', 
+                'needs_auth': True,
+                'detail': str(e)
+            }, status=401)
+        
         return Response({'error': str(e)}, status=500)

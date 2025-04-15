@@ -9,7 +9,6 @@ const Comparison = () => {
   const navigate = useNavigate();
   const { user, logout } = useContext(UserContext);
   
-
   const { 
     results, 
     videoURL, 
@@ -19,6 +18,7 @@ const Comparison = () => {
     s3Key,
     processedS3Url 
   } = location.state || {};
+  console.log("result: ", results);
   
   const [originalSeoData, setOriginalSeoData] = useState(null);
   const [error, setError] = useState(null);
@@ -26,11 +26,13 @@ const Comparison = () => {
     original: null,
     enhanced: null
   });
+  const [isYoutubeVideo, setIsYoutubeVideo] = useState(false);
 
   // Helper function to get video URLs
   const getVideoUrls = async () => {
     let originalUrl = null;
     let enhancedUrl = null;
+    let isYoutube = false;
 
     // Check for S3 URLs first
     if (processedS3Url) {
@@ -48,7 +50,10 @@ const Comparison = () => {
     }
 
     // Get original video URL
-    if (s3Key) {
+    if (videoURL && videoURL.includes('youtube.com')) {
+      originalUrl = videoURL;
+      isYoutube = true;
+    } else if (s3Key) {
       originalUrl = `https://fetchingvideo1.s3.amazonaws.com/${s3Key}`;
     } else if (videoURL) {
       originalUrl = videoURL;
@@ -61,6 +66,8 @@ const Comparison = () => {
       original: originalUrl,
       enhanced: enhancedUrl
     });
+    
+    setIsYoutubeVideo(isYoutube);
   };
 
   const fetchOriginalSeo = async () => {
@@ -126,6 +133,7 @@ const Comparison = () => {
       </div>
     );
   };
+  
   const renderVideoComparison = () => {
     if (!videoUrls.original || !videoUrls.enhanced) {
       return <p>No video available for comparison</p>;
@@ -135,11 +143,12 @@ const Comparison = () => {
       <div className="comparison-grid">
         <div className="comparison-card">
           <h3 className="card-title">Original</h3>
-          {videoUrls.original.includes('youtube.com') ? (
+          {isYoutubeVideo ? (
             <iframe 
-              width="560" 
+              className="video-player"
+              width="100%" 
               height="315" 
-              src={`https://www.youtube.com/embed/${videoUrls.original.split('v=')[1]}`} 
+              src={`https://www.youtube.com/embed/${videoUrls.original.split('v=')[1].split('&')[0]}`} 
               frameBorder="0" 
               allowFullScreen
             ></iframe>
@@ -164,27 +173,42 @@ const Comparison = () => {
   return (
     <div className="comparison-app">
       <header className="dashboard-header">
-                <div className="logo-container" onClick={() => navigate("/")}>
-                    <h1 className="logo">
-                        <span className="logo-bold">Channel-</span>
-                        <span className="logo-highlight">IQ</span>
-                    </h1>
-                </div>
+  <div className="logo-container" onClick={() => navigate("/")}>
+    <h1 className="logo">
+      <span className="logo-bold">Channel-</span>
+      <span className="logo-highlight">IQ</span>
+    </h1>
+  </div>
 
-                <div className="header-right">
-                    {user ? (
-                        <div className="user-profile">
-                            <img src={user.picture} alt="User" className="user-avatar" />
-                            <span className="username">{user.name}</span>
-                            <button className="logout-button" onClick={logout}>Logout</button>
-                        </div>
-                    ) : (
-                        <button className="login-button" onClick={() => navigate("/login")}>
-                            Login
-                        </button>
-                    )}
-                </div>
-            </header>
+  <div className="header-right">
+    <a 
+      className="nav-link" 
+      href="/terms" // or use navigate("/terms") if you're using React Router
+      style={{ marginRight: '1rem', textDecoration: 'none', color: 'var(--color-text)', fontWeight: 500 }}
+    >
+      Terms & Services
+    </a>
+    <a 
+        className="nav-link" 
+        href="/videos" // Add this new link
+        style={{ marginRight: '1rem', textDecoration: 'none', color: 'var(--color-text)', fontWeight: 500 }}
+    >
+        Videos
+    </a>
+
+    {user ? (
+      <div className="user-profile">
+        <img src={user.picture} alt="User" className="user-avatar" />
+        <span className="username">{user.name}</span>
+        <button className="logout-button" onClick={logout}>Logout</button>
+      </div>
+    ) : (
+      <button className="login-button" onClick={() => navigate("/login")}>
+        Login
+      </button>
+    )}
+  </div>
+</header>
       
       <div className="comparison-container">
         <h1 className="comparison-title">Video Optimization Results</h1>

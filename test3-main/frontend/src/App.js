@@ -16,6 +16,8 @@ import { UserProvider, UserContext } from "./components/UserContext";
 import Dashboard from './components/Dashboard';
 import VideoDashboard from "./components/videoDashboard";
 import VideoDetails from "./components/videoDetails";
+import TermsAndServices from './components/TermsAndServices';
+import AllVideosPage from './components/AllVideosPage';
 // ✅ Create Protected Route Component
 const PrivateRoute = ({ element }) => {
   const { user } = useContext(UserContext);
@@ -52,6 +54,8 @@ const App = () => {
             <Route path="/comparison" element={<PrivateRoute element={<Comparison />} />} />
             <Route path="/video/:userId/:videoId" element={<VideoDetails />} />
             <Route path="/dashboard" element={<VideoDashboard />} />
+            <Route path="/terms" element={<TermsAndServices/>} />
+            <Route path="/videos" element={<AllVideosPage />} />
             {/* ✅ Handle 404 */}
             <Route path="*" element={<h2>Page Not Found</h2>} />
           </Routes>

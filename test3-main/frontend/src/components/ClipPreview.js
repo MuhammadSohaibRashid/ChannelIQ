@@ -138,12 +138,18 @@ function ClipPreview() {
                     videoURL: videoURL,
                     userEmail: user?.email,
                     timestamp: serverTimestamp(),
-                    
                 }),
             });
     
             if (response.ok) {
                 const result = await response.json();
+                
+                // Check if there was a language detection error for captions
+                if (result.results.captions && result.results.captions.status === "language_error") {
+                    // Show alert about language limitation and stop processing
+                    alert(`${result.results.captions.message} Processing cannot continue.`);
+                    return; // Exit the function early
+                }
                 await saveClipDataToFirebase(selectedClip, selectedFeatures, videoTitle);
     
                 if (isSEOIncluded) {
@@ -193,27 +199,42 @@ function ClipPreview() {
         <div className="dashboard-container">
             {/* Header */}
             <header className="dashboard-header">
-                <div className="logo-container" onClick={() => navigate("/")}>
-                    <h1 className="logo">
-                        <span className="logo-bold">Channel-</span>
-                        <span className="logo-highlight">IQ</span>
-                    </h1>
-                </div>
+  <div className="logo-container" onClick={() => navigate("/")}>
+    <h1 className="logo">
+      <span className="logo-bold">Channel-</span>
+      <span className="logo-highlight">IQ</span>
+    </h1>
+  </div>
 
-                <div className="header-right">
-                    {user ? (
-                        <div className="user-profile">
-                            <img src={user.picture} alt="User" className="user-avatar" />
-                            <span className="username">{user.name}</span>
-                            <button className="logout-button" onClick={logout}>Logout</button>
-                        </div>
-                    ) : (
-                        <button className="login-button" onClick={() => navigate("/login")}>
-                            Login
-                        </button>
-                    )}
-                </div>
-            </header>
+  <div className="header-right">
+    <a 
+      className="nav-link" 
+      href="/terms" // or use navigate("/terms") if you're using React Router
+      style={{ marginRight: '1rem', textDecoration: 'none', color: 'var(--color-text)', fontWeight: 500 }}
+    >
+      Terms & Services
+    </a>
+    <a 
+        className="nav-link" 
+        href="/videos" // Add this new link
+        style={{ marginRight: '1rem', textDecoration: 'none', color: 'var(--color-text)', fontWeight: 500 }}
+    >
+        Videos
+    </a>
+
+    {user ? (
+      <div className="user-profile">
+        <img src={user.picture} alt="User" className="user-avatar" />
+        <span className="username">{user.name}</span>
+        <button className="logout-button" onClick={logout}>Logout</button>
+      </div>
+    ) : (
+      <button className="login-button" onClick={() => navigate("/login")}>
+        Login
+      </button>
+    )}
+  </div>
+</header>
 
             {/* Main Content */}
             <div className="dashboard-content">
