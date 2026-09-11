@@ -86,7 +86,7 @@ Django + Django REST Framework
 .
 ├── README.md
 ├── .gitignore
-└── test3-main/
+└── ChannelIQ-FYP/
     ├── backend/
     │   ├── manage.py
     │   ├── app/
@@ -104,7 +104,7 @@ Django + Django REST Framework
 
 ```bash
 git clone https://github.com/MuhammadSohaibRashid/channeliq.git
-cd channeliq/test3-main
+cd channeliq/ChannelIQ-FYP
 ```
 
 ### 2. Configure backend environment variables
