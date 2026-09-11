@@ -2,3 +2,17 @@
 *.mp4
 client_secret.json
 node_modules/
+
+# Local secrets and development data
+**/.env
+**/firebase_credential.json
+**/db.sqlite3
+**/client_secret*.json
+
+# Generated and machine-specific files
+**/node_modules/
+__pycache__/
+*.py[cod]
+media/videos/
+*.onnx
+*.pt
